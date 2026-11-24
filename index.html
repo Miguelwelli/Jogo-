@@ -49,6 +49,54 @@
     @keyframes lobbyIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     .tab-panel:not(.hidden) { animation: lobbyIn .22s ease-out; }
     .lobby-foot { text-shadow: 0 1px 3px rgba(0,0,0,.85); }
+    /* Tela de operador: a vitrine fica sobre o cenário 3D existente. */
+    #operator-screen { position:absolute; inset:0; pointer-events:none; }
+    #operator-screen.hidden { display:none; }
+    .operator-heading { position:absolute; top:5%; left:4%; width:57%; text-align:center; text-shadow:0 3px 0 #14213d, 0 4px 10px #0008; }
+    .operator-heading h2 { font-size:clamp(16px,2.4vw,32px); font-weight:1000; line-height:1; }
+    .operator-heading span { display:inline-block; margin-top:6px; padding:2px 10px; border-radius:5px; border:1px solid #fff8; background:#345a63; font-size:11px; font-weight:900; }
+    .operator-back { pointer-events:auto; position:absolute; top:9px; left:12px; color:#ffe063; font-weight:900; font-size:13px; text-shadow:0 2px #523000; }
+    .operator-panel { pointer-events:auto; position:absolute; right:2%; top:5%; bottom:4%; width:min(410px,36%); display:flex; flex-direction:column; border:2px solid #8fa6c4; border-radius:16px; background:rgba(12,26,59,.92); box-shadow:0 8px 25px #1118; overflow:hidden; }
+    .operator-tabs { display:flex; flex-shrink:0; border-bottom:1px solid #ffffff30; }
+    .operator-tabs button { flex:1; padding:10px; font-weight:900; font-size:12px; color:#b6c4da; }
+    .operator-tabs button.selected { color:#ffe05a; border-bottom:4px solid #ffd34d; }
+    .operator-content { padding:10px; overflow-y:auto; flex:1; min-height:0; }
+    .skin-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+    .skin-card { min-width:0; border:2px solid #7394b6; border-radius:10px; overflow:hidden; background:#203958; color:white; text-align:center; box-shadow:inset 0 0 16px #ffffff18; }
+    .skin-card.selected { border-color:#ffdf64; box-shadow:0 0 0 2px #ffdf6470, 0 0 18px #ffcb5355; }
+    .skin-card:focus-visible,.color-swatch:focus-visible { outline:3px solid white; outline-offset:2px; }
+    .skin-card svg { width:100%; height:clamp(45px,10vh,92px); display:block; }
+    .skin-card-label { display:block; background:#0b1b32c9; padding:4px 2px; font-size:clamp(8px,.85vw,11px); font-weight:900; line-height:1.15; }
+    .skin-card-label small { display:block; margin-top:3px; color:#a9e7ca; font-size:9px; }
+    .operator-equip { flex-shrink:0; margin:0 10px 10px; padding:10px; border:2px solid #ffe78d; border-radius:9px; background:linear-gradient(#ffe25d,#f8ac00); color:#513600; font-weight:1000; box-shadow:0 4px 0 #a66400; }
+    .operator-equip:disabled { opacity:.8; cursor:default; }
+    .operator-info { margin-top:10px; font-size:10px; color:#a5b4c9; }
+    .operator-info input { width:100%; margin-top:4px; padding:6px; color:white; background:#091a32; border:1px solid #ffffff30; border-radius:5px; }
+    .operator-preview-controls { pointer-events:auto; position:absolute; bottom:7%; left:4%; width:57%; display:flex; align-items:center; justify-content:center; gap:16px; }
+    .operator-preview-controls button { border-radius:8px; background:#162c49d9; border:1px solid #ffffff50; padding:6px 13px; color:white; font-weight:900; }
+    #operator-preview-status { color:#ffe16a; font-weight:900; text-shadow:0 2px 4px #000; font-size:12px; }
+    .skin-grid.hidden, .color-grid.hidden { display:none; }
+    .color-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+    .color-swatch { border:2px solid #8297ad; border-radius:8px; background:#1b3454; color:white; padding:10px 4px; font-size:10px; font-weight:900; }
+    .color-swatch.selected { border-color:#ffdf64; }
+    .color-swatch i { display:block; width:28px; height:28px; border:2px solid #fff9; border-radius:50%; margin:0 auto 6px; }
+    @media (orientation:portrait) {
+      .operator-heading { top:5%; left:2%; width:96%; }
+      .operator-panel { left:3%; right:3%; width:auto; top:53%; bottom:2%; }
+      .operator-preview-controls { top:43%; bottom:auto; left:5%; width:90%; }
+      .skin-card svg { height:clamp(30px,6vh,64px); }
+      .operator-content { padding:6px; }
+      .skin-grid { gap:5px; }
+    }
+    @media (max-height:420px) and (orientation:landscape) {
+      .operator-panel { top:2%; bottom:2%; width:40%; }
+      .operator-tabs button { padding:4px; }
+      .operator-content { padding:5px; }
+      .skin-grid { gap:4px; }
+      .skin-card svg { height:42px; }
+      .operator-equip { padding:5px; margin:0 5px 5px; }
+      .operator-heading { top:4%; }
+    }
     @media (max-height: 420px) {
       #lobby-top { padding: 4px 10px !important; }
       #lobby-top .lobby-title { font-size: 14px !important; }
@@ -235,22 +283,6 @@
           </div>
         </div>
 
-        <!-- OPERADOR -->
-        <div class="tab-panel hidden" data-panel="op">
-          <div class="text-[9px] tracking-[0.2em] text-slate-400">CODINOME</div>
-          <input id="callsign-input" type="text" maxlength="12" placeholder="OPERADOR" class="mt-1 w-full rounded border border-white/15 bg-slate-900/90 px-2.5 py-1.5 text-xs font-bold uppercase tracking-widest text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none" />
-          <div class="mt-2.5 flex items-center justify-between text-[9px] tracking-[0.2em] text-slate-400">
-            <span>UNIFORME</span><span id="skin-name" class="text-amber-300">AZUL TÁTICO</span>
-          </div>
-          <div id="skin-list" class="mt-1.5 flex flex-wrap gap-2"></div>
-          <div class="mt-3 grid grid-cols-3 gap-1.5 text-center">
-            <div class="rounded-lg border border-white/10 bg-slate-900/70 py-1"><div id="st-kills" class="text-sm font-black text-white">0</div><div class="text-[8px] tracking-widest text-slate-400">ALVOS</div></div>
-            <div class="rounded-lg border border-white/10 bg-slate-900/70 py-1"><div id="st-heads" class="text-sm font-black text-rose-400">0</div><div class="text-[8px] tracking-widest text-slate-400">HEADSHOTS</div></div>
-            <div class="rounded-lg border border-white/10 bg-slate-900/70 py-1"><div id="st-matches" class="text-sm font-black text-emerald-400">0</div><div class="text-[8px] tracking-widest text-slate-400">PARTIDAS</div></div>
-          </div>
-          <div class="mt-2.5 text-[9px] leading-snug text-slate-500">Nível sobe ao abater alvos: +10 XP por alvo, +15 com tiro na cabeça.</div>
-        </div>
-
         <!-- ONLINE -->
         <div class="tab-panel hidden space-y-2" data-panel="net">
           <div class="flex items-center justify-between border-b border-white/10 pb-1.5">
@@ -281,6 +313,29 @@
 
           <div id="room-feedback" class="min-h-[14px] text-[10px] text-slate-400">Crie uma sala ou digite o código. Na arena, o anfitrião escolhe o modo e inicia o duelo 1 contra 1.</div>
         </div>
+      </div>
+
+      <div id="operator-screen" class="hidden">
+        <button id="operator-back" class="operator-back" type="button">⬅ VOLTAR</button>
+        <div class="operator-heading"><h2 id="skin-name">OPERADOR PADRÃO</h2><span id="skin-rarity">COMUM</span></div>
+        <div class="operator-preview-controls">
+          <button id="operator-left" aria-label="Girar operador para a esquerda">↶</button>
+          <span id="operator-preview-status">EQUIPADO ✓</span>
+          <button id="operator-right" aria-label="Girar operador para a direita">↷</button>
+        </div>
+        <section class="operator-panel" aria-label="Personalização do operador">
+          <div class="operator-tabs"><button id="operator-skins-tab" class="selected" type="button">SKINS</button><button id="operator-colors-tab" type="button">CORES</button></div>
+          <div class="operator-content">
+            <div id="skin-list" class="skin-grid"></div>
+            <div id="color-list" class="color-grid hidden"></div>
+            <div class="operator-info">
+              <label for="callsign-input">CODINOME</label>
+              <input id="callsign-input" type="text" maxlength="12" placeholder="OPERADOR" />
+              <div class="mt-2">ALVOS: <b id="st-kills">0</b> &nbsp; • &nbsp; HEADSHOTS: <b id="st-heads">0</b> &nbsp; • &nbsp; PARTIDAS: <b id="st-matches">0</b></div>
+            </div>
+          </div>
+          <button id="equip-skin" class="operator-equip" type="button">EQUIPADO ✓</button>
+        </section>
       </div>
 
       <!-- Coluna direita: esquadrão, modo, iniciar -->
@@ -658,6 +713,19 @@
         torso.position.set(0, 1.21, 0);
         torso.castShadow = true;
         root.add(torso);
+        const pouchMat = new THREE.MeshStandardMaterial({ color: 0x253323, roughness: 0.85, flatShading: true });
+        for (const x of [-0.15, 0, 0.15]) {
+          const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.07), pouchMat);
+          pouch.position.set(x, -0.14, 0.17);
+          torso.add(pouch);
+        }
+        const medicalMark = new THREE.Group();
+        const red = new THREE.MeshBasicMaterial({ color: 0xd53535 });
+        medicalMark.add(new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.21, 0.012), red));
+        medicalMark.add(new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.07, 0.012), red));
+        medicalMark.position.set(0, 0.12, 0.16);
+        medicalMark.visible = false;
+        torso.add(medicalMark);
 
         const headGroup = new THREE.Group();
         headGroup.position.set(0, 1.76, 0);
@@ -688,7 +756,7 @@
         opGun.castShadow = true;
         root.add(opGun);
 
-        return { root, torso, headGroup, legLPivot, legRPivot, armR, armL, opGun, vestMat, visorMat };
+        return { root, torso, headGroup, legLPivot, legRPivot, armR, armL, opGun, vestMat, visorMat, suitMat, helmetMat, pouchMat, medicalMark };
       }
 
       const lobbyRig = buildOperatorRig(0x22d3ee, 0x5b7f3a);
@@ -1337,6 +1405,7 @@
           if (isNew) rp.rig.root.position.copy(rp.targetPos);
           rp.targetYaw = data.yaw;
           rp.targetSliding = !!data.sliding;
+          if (Number.isInteger(data.skin) && SKINS[data.skin] && Number.isInteger(data.color) && VISOR_COLORS[data.color]) paintRig(rp.rig, data.skin, data.color);
         } else if (data.type === 'shoot') {
           const start = new THREE.Vector3(data.ox, data.oy, data.oz);
           const end = new THREE.Vector3(data.ex, data.ey, data.ez);
@@ -2362,19 +2431,28 @@
       const byId = (id) => document.getElementById(id);
       const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+      // Índices permanecem estáveis para perfis e para a sincronização online.
       const SKINS = [
-        { name: 'AZUL TÁTICO', visor: 0x22d3ee, vest: 0x5b7f3a },
-        { name: 'ÂMBAR', visor: 0xfbbf24, vest: 0x7c2d12 },
-        { name: 'ESMERALDA', visor: 0x34d399, vest: 0x14532d },
-        { name: 'ROSA', visor: 0xf43f5e, vest: 0x4c1d3a },
-        { name: 'FANTASMA', visor: 0xe2e8f0, vest: 0x1f2937 }
+        { name: 'PADRÃO', rarity: 'COMUM', visor: 0x22d3ee, vest: 0x5b7f3a, suit: 0x1e293b, helmet: 0x172b32, bg: '#586b53' },
+        { name: 'DESERTO', rarity: 'RARO', visor: 0xfbbf24, vest: 0x9b8059, suit: 0x67543d, helmet: 0xbba078, bg: '#4d85b4' },
+        { name: 'CYBER', rarity: 'ÉPICO', visor: 0xec69ff, vest: 0x49325f, suit: 0x1b1632, helmet: 0x291f42, bg: '#783b9e' },
+        { name: 'FORÇA ESPECIAL', rarity: 'RARO', visor: 0xffd24b, vest: 0x253b60, suit: 0x101b32, helmet: 0x16283e, bg: '#486181' },
+        { name: 'MÉDICO', rarity: 'RARO', visor: 0x89d8eb, vest: 0xe2e8e5, suit: 0x94a9ad, helmet: 0xe7eeec, bg: '#7695a4' },
+        { name: 'LENDÁRIO', rarity: 'LENDÁRIO', visor: 0xffd953, vest: 0xd89b1d, suit: 0x5d431f, helmet: 0xa86c14, bg: '#aa7928' }
+      ];
+      const VISOR_COLORS = [
+        { name: 'ORIGINAL', value: null }, { name: 'AZUL', value: 0x22d3ee },
+        { name: 'OURO', value: 0xffc936 }, { name: 'VERDE', value: 0x34d399 },
+        { name: 'ROXO', value: 0xe879f9 }, { name: 'VERMELHO', value: 0xf05252 }
       ];
       const hexStr = (n) => '#' + n.toString(16).padStart(6, '0');
 
       const PROFILE_KEY = 'nexuswz_profile_v1';
-      const profile = { name: 'OPERADOR', skin: 0, xp: 0, kills: 0, heads: 0, matches: 0 };
+      const profile = { name: 'OPERADOR', skin: 0, color: 0, xp: 0, kills: 0, heads: 0, matches: 0 };
       try { Object.assign(profile, JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}')); } catch (e) {}
-      if (!SKINS[profile.skin]) profile.skin = 0;
+      if (!Number.isInteger(profile.skin) || !SKINS[profile.skin]) profile.skin = 0;
+      if (!Number.isInteger(profile.color) || !VISOR_COLORS[profile.color]) profile.color = 0;
+      let previewSkin = profile.skin, previewColor = profile.color;
 
       function saveProfile() {
         try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch (e) {}
@@ -2405,10 +2483,17 @@
 
       let currentTab = 'play';
       function showTab(name) {
+        if (currentTab === 'op' && name !== 'op') {
+          previewSkin = profile.skin; previewColor = profile.color;
+          renderOperatorPreview();
+        }
         currentTab = name;
         document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== name));
         document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('tab-active', b.dataset.tab === name));
-        byId('side-panel').classList.toggle('hidden', name === 'play');
+        byId('side-panel').classList.toggle('hidden', name === 'play' || name === 'op');
+        byId('operator-screen').classList.toggle('hidden', name !== 'op');
+        byId('lobby-right').classList.toggle('hidden', name === 'op');
+        document.querySelector('.lobby-foot').classList.toggle('hidden', name === 'op');
       }
       document.querySelectorAll('.tab-btn').forEach((b) => {
         b.addEventListener('click', () => {
@@ -2416,30 +2501,76 @@
           showTab(b.dataset.tab === currentTab ? 'play' : b.dataset.tab);
         });
       });
-
-      function applySkin(i) {
-        profile.skin = i;
-        const s = SKINS[i];
-        lobbyRig.visorMat.color.setHex(s.visor);
-        lobbyRig.vestMat.color.setHex(s.vest);
-        byId('skin-name').textContent = s.name;
-        document.querySelectorAll('.skin-btn').forEach((b) => {
-          const on = Number(b.dataset.skin) === i;
-          b.classList.toggle('ring-2', on);
-          b.classList.toggle('ring-amber-400', on);
-          b.classList.toggle('opacity-60', !on);
+      byId('operator-back').addEventListener('click', () => showTab('play'));
+      byId('operator-left').addEventListener('click', () => { lobbyOperator.rotation.y -= Math.PI / 4; });
+      byId('operator-right').addEventListener('click', () => { lobbyOperator.rotation.y += Math.PI / 4; });
+      function paintRig(rig, skinIndex, colorIndex) {
+        const skin = SKINS[skinIndex] || SKINS[0];
+        const color = VISOR_COLORS[colorIndex] || VISOR_COLORS[0];
+        rig.vestMat.color.setHex(skin.vest);
+        rig.visorMat.color.setHex(color.value === null ? skin.visor : color.value);
+        rig.suitMat.color.setHex(skin.suit);
+        rig.helmetMat.color.setHex(skin.helmet);
+        rig.pouchMat.color.setHex(skin.suit);
+        rig.medicalMark.visible = skin.name === 'MÉDICO';
+      }
+      function renderOperatorPreview() {
+        const skin = SKINS[previewSkin];
+        paintRig(lobbyRig, previewSkin, previewColor);
+        lobbySleeveMat.color.setHex(skin.suit);
+        byId('skin-name').textContent = 'OPERADOR ' + skin.name;
+        byId('skin-rarity').textContent = skin.rarity;
+        const equipped = previewSkin === profile.skin && previewColor === profile.color;
+        byId('operator-preview-status').textContent = equipped ? 'EQUIPADO ✓' : 'VISUALIZAÇÃO';
+        byId('equip-skin').textContent = equipped ? 'EQUIPADO ✓' : 'SELECIONAR ➜';
+        byId('equip-skin').disabled = equipped;
+        document.querySelectorAll('.skin-card').forEach((b) => {
+          const selected = Number(b.dataset.skin) === previewSkin;
+          b.classList.toggle('selected', selected);
+          b.setAttribute('aria-pressed', String(selected));
+          b.querySelector('small').textContent = Number(b.dataset.skin) === profile.skin ? '✓ EQUIPADO' : SKINS[Number(b.dataset.skin)].rarity;
         });
+        document.querySelectorAll('.color-swatch').forEach((b) => {
+          const selected = Number(b.dataset.color) === previewColor;
+          b.classList.toggle('selected', selected);
+          b.setAttribute('aria-pressed', String(selected));
+        });
+      }
+      function applySkin(i) {
+        profile.skin = previewSkin = i;
+        previewColor = profile.color;
+        rbxSleeveMat.color.setHex(SKINS[i].suit);
+        renderOperatorPreview();
         saveProfile();
       }
-
-      SKINS.forEach((s, i) => {
+      SKINS.forEach((skin, i) => {
         const b = document.createElement('button');
-        b.dataset.skin = i;
-        b.className = 'skin-btn h-8 w-8 rounded border border-white/20 transition';
-        b.style.background = `linear-gradient(135deg, ${hexStr(s.vest)} 50%, ${hexStr(s.visor)} 50%)`;
-        b.setAttribute('aria-label', s.name);
-        b.addEventListener('click', () => { initAudio(); applySkin(i); });
+        b.type = 'button'; b.dataset.skin = i; b.className = 'skin-card';
+        b.style.background = skin.bg;
+        b.setAttribute('aria-label', 'Visualizar operador ' + skin.name);
+        // Ilustração vetorial própria, com as mesmas cores do modelo 3D.
+        b.innerHTML = `<svg viewBox="0 0 100 90" aria-hidden="true"><ellipse cx="50" cy="84" rx="29" ry="4" fill="#000" opacity=".2"/><path d="M35 58h13v22H34zM52 58h13l1 22H52z" fill="${hexStr(skin.suit)}" stroke="#101827" stroke-width="2"/><path d="M30 38l-9 4-3 19 10 3 5-16M70 38l9 4 3 19-10 3-5-16" fill="${hexStr(skin.suit)}" stroke="#101827" stroke-width="2"/><path d="M32 34h36v31H32z" fill="${hexStr(skin.vest)}" stroke="#101827" stroke-width="3"/><path d="M40 50h8v9h-8zM52 50h8v9h-8z" fill="#000" opacity=".22"/><rect x="34" y="8" width="32" height="27" rx="3" fill="${hexStr(skin.helmet)}" stroke="#101827" stroke-width="3"/><path d="M37 17h26v9H37z" fill="${hexStr(skin.visor)}" stroke="#101827" stroke-width="2"/>${skin.name === 'MÉDICO' ? '<path d="M48 37h4v12h-4zM44 41h12v4H44z" fill="#e14343"/>' : ''}</svg><span class="skin-card-label">${skin.name}<small></small></span>`;
+        b.addEventListener('click', () => { initAudio(); previewSkin = i; renderOperatorPreview(); });
         byId('skin-list').appendChild(b);
+      });
+      VISOR_COLORS.forEach((color, i) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.dataset.color = i; b.className = 'color-swatch';
+        b.innerHTML = `<i style="background:${color.value === null ? 'linear-gradient(135deg,#22d3ee,#fbbf24,#e879f9)' : hexStr(color.value)}"></i>${color.name}`;
+        b.addEventListener('click', () => { previewColor = i; renderOperatorPreview(); });
+        byId('color-list').appendChild(b);
+      });
+      function showOperatorSection(colors) {
+        byId('skin-list').classList.toggle('hidden', colors);
+        byId('color-list').classList.toggle('hidden', !colors);
+        byId('operator-skins-tab').classList.toggle('selected', !colors);
+        byId('operator-colors-tab').classList.toggle('selected', colors);
+      }
+      byId('operator-skins-tab').addEventListener('click', () => showOperatorSection(false));
+      byId('operator-colors-tab').addEventListener('click', () => showOperatorSection(true));
+      byId('equip-skin').addEventListener('click', () => {
+        profile.color = previewColor;
+        applySkin(previewSkin);
       });
 
       const callsignInput = byId('callsign-input');
@@ -2572,10 +2703,10 @@
 
           // Desloca o foco horizontal para compensar os painéis laterais e manter o palco bem equilibrado
           const sideOpen = !byId('side-panel').classList.contains('hidden');
-          const focusX = aspect >= 1.0 ? (sideOpen ? -0.25 : 0.65) : 0;
+          const focusX = currentTab === 'op' && aspect >= 1.0 ? 0.9 : (aspect >= 1.0 ? (sideOpen ? -0.25 : 0.65) : 0);
 
           camera.position.set(STAGE.x + sway + focusX * 0.45, 1.52, STAGE.z + dist);
-          camera.lookAt(STAGE.x + focusX, 1.24, STAGE.z);
+          camera.lookAt(STAGE.x + focusX, currentTab === 'op' && aspect < 1 ? 0.3 : 1.24, STAGE.z);
 
           lobbyRing.rotation.z += dt * 0.5;
           for (let i = 0; i < lobbyParticles.length; i++) {
@@ -2724,7 +2855,8 @@
               y: playerPos.y,
               z: playerPos.z,
               yaw: yaw,
-              sliding: isSliding
+              sliding: isSliding,
+              skin: profile.skin, color: profile.color
             });
           }
         } else {
