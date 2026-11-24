@@ -1,5 +1,9 @@
 # ui-figma-roblox
 
+> **Instalado neste repo:** esta cópia vive em `.skills/ui-figma-roblox/` (ver o README da raiz de
+> `Jogo-`). O instalador npm foi removido; a arte vem em subconjunto e `scripts/fetch-assets.sh`
+> baixa o resto. As instruções `npx` abaixo valem para a instalação upstream, não para este repo.
+
 An agent skill for designing **Roblox stud-style UI in Figma** — layered panels, tiled stud textures, product cards, icons, button systems, currency displays — with a bundled art library and a verified Figma → Roblox `StarterGui` worked example.
 
 ![Final Figma shop panel](examples/stud-shop/renders/03-figma-panel-final.png)
