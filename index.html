@@ -98,6 +98,11 @@
       </div>
     </div>
 
+    <div id="duel-hud" class="hidden fixed top-14 left-1/2 -translate-x-1/2 rounded-lg border border-amber-400/50 bg-slate-950/85 px-4 py-2 text-center text-xs font-bold shadow-lg">
+      <div id="duel-score" class="text-amber-300"></div>
+      <div id="duel-health" class="mt-1 text-white"></div>
+      <div id="duel-message" class="mt-1 text-sky-300"></div>
+    </div>
     <!-- Centro: Mira Dinâmica + Hitmarker -->
     <div id="crosshair-container" class="pointer-events-none fixed inset-0 flex items-center justify-center">
       <div id="crosshair" class="relative flex items-center justify-center transition-opacity duration-100">
@@ -274,7 +279,7 @@
             <button id="join-room-btn" class="shrink-0 rounded border border-amber-400/60 bg-amber-400/15 px-3 py-1.5 text-[10px] font-bold tracking-wider text-amber-300 transition hover:bg-amber-400/25">ENTRAR</button>
           </div>
 
-          <div id="room-feedback" class="min-h-[14px] text-[10px] text-slate-400">Crie uma sala ou digite o código para jogar online. Todos devem escolher o mesmo modo no lobby.</div>
+          <div id="room-feedback" class="min-h-[14px] text-[10px] text-slate-400">Crie uma sala ou digite o código. Na arena, o anfitrião escolhe o modo e inicia o duelo 1 contra 1.</div>
         </div>
       </div>
 
@@ -333,6 +338,13 @@
     </div>
   </div>
 
+  <div id="duel-invite" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-950/85 p-4">
+    <div class="w-full max-w-sm rounded-xl border border-amber-400/50 bg-slate-900 p-6 text-center">
+      <h2 class="text-xl font-black text-amber-300">ARENA DOS GLADIADORES</h2>
+      <p class="mt-3 text-sm text-white">O anfitrião iniciou um duelo 1 contra 1. Entre para começar!</p>
+      <button id="duel-ready" class="mt-5 rounded bg-amber-400 px-5 py-3 font-black text-slate-950">ENTRAR NA ARENA</button>
+    </div>
+  </div>
   <script>
     (function () {
       if (typeof THREE === 'undefined') {
@@ -1190,7 +1202,7 @@
         },
         arena: {
           title: 'ARENA DOS GLADIADORES',
-          desc: 'Arena de areia com pilares e cobertura. Para jogar junto, todos devem escolher este modo.',
+          desc: 'Duelo online 1 contra 1, melhor de 3 rounds. O anfitrião escolhe e inicia.',
           spawn: new THREE.Vector3(ARENA_X, 0, 17),
           yaw: 0
         },
@@ -1272,7 +1284,7 @@
       }
 
       function updateRoomUI() {
-        const totalPlayers = 1 + remotePlayers.size;
+        const totalPlayers = 1 + Array.from(connections.values()).filter(c => c.open).length;
         renderSquad();
         if (!roomCode) {
           netStatusTextEl.textContent = 'LOCAL';
@@ -1299,9 +1311,30 @@
 
       function handleRemoteData(fromId, data) {
         if (!data || !data.type) return;
-        if (data.type === 'state') {
+        if (data.type === 'room_busy') {
+          setRoomFeedback('A sala está em uma partida de gladiadores. Tente novamente depois.', true);
+        } else if (data.type === 'duel_mode' && !isHost && inLobby && MODES[data.mode]) {
+          setMode(data.mode);
+        } else if (data.type === 'duel_invite' && !isHost) {
+          if (!inLobby) returnToLobby();
+          setMode('arena');
+          duel.id = data.id;
+          duel.phase = 'invited';
+          document.getElementById('duel-invite').classList.remove('hidden');
+          document.getElementById('duel-invite').classList.add('flex');
+        } else if (data.type === 'duel_ready' && isHost && duel.phase === 'waiting' && data.id === duel.id) {
+          startDuelRound();
+        } else if (data.type === 'duel_hit' && isHost && data.id === duel.id && data.round === duel.round && duel.phase === 'active') {
+          if (WEAPONS[data.weapon] && typeof data.head === 'boolean') applyDuelHit('host', data.weapon, data.head);
+        } else if (data.type === 'duel_snapshot' && !isHost && data.id === duel.id) {
+          applyDuelSnapshot(data);
+        } else if (data.type === 'duel_leave' && data.id === duel.id && duel.phase !== 'idle') {
+          endDuel('O adversário saiu da partida.');
+        } else if (data.type === 'state') {
+          const isNew = !remotePlayers.has(fromId);
           const rp = getOrCreateRemotePlayer(fromId);
           rp.targetPos.set(data.x, data.y, data.z);
+          if (isNew) rp.rig.root.position.copy(rp.targetPos);
           rp.targetYaw = data.yaw;
           rp.targetSliding = !!data.sliding;
         } else if (data.type === 'shoot') {
@@ -1319,30 +1352,38 @@
 
       function attachConnectionEvents(conn) {
         const remoteId = conn.peer;
+        let roomBusy = false;
         connections.set(remoteId, conn);
 
         conn.on('open', () => {
           updateRoomUI();
-          setRoomFeedback(`Conectado à sala ${roomCode}.`);
+          setRoomFeedback(isHost ? 'Jogador conectado. Escolha a arena e inicie o duelo.' : 'Conectado! Aguarde o anfitrião escolher o modo e iniciar.');
+          if (isHost) conn.send({ type: 'duel_mode', mode: currentModeKey });
         });
 
         conn.on('data', (data) => {
+          if (data && data.type === 'room_busy') roomBusy = true;
           handleRemoteData(remoteId, data);
         });
 
         conn.on('close', () => {
           connections.delete(remoteId);
           removeRemotePlayer(remoteId);
-          setRoomFeedback('Um jogador saiu da sala.');
+          updateRoomUI();
+          if (duel.phase !== 'idle') endDuel('O adversário desconectou.');
+          if (!roomBusy) setRoomFeedback('Um jogador saiu da sala.');
         });
 
         conn.on('error', () => {
           connections.delete(remoteId);
           removeRemotePlayer(remoteId);
+          updateRoomUI();
+          if (duel.phase !== 'idle') endDuel('A conexão com o adversário falhou.');
         });
       }
 
       function disconnectRoom() {
+        if (duel.phase !== 'idle') { broadcastData({ type: 'duel_leave', id: duel.id }); resetDuel(); }
         connections.forEach((conn) => {
           try { conn.close(); } catch (e) {}
         });
@@ -1384,6 +1425,10 @@
         });
 
         p.on('connection', (conn) => {
+          if (duel.phase !== 'idle') {
+            conn.on('open', () => { conn.send({ type: 'room_busy' }); setTimeout(() => conn.close(), 300); });
+            return;
+          }
           attachConnectionEvents(conn);
         });
 
@@ -1479,9 +1524,11 @@
         currentModeKey = key;
         document.getElementById('lobby-mode-title').textContent = MODES[key].title;
         document.getElementById('mode-card').title = MODES[key].desc;
+        if (isHost && inLobby) broadcastData({ type: 'duel_mode', mode: key });
       }
       document.getElementById('mode-card').addEventListener('click', () => {
         initAudio();
+        if (roomCode && !isHost && Array.from(connections.values()).some(c => c.open)) { setRoomFeedback('O anfitrião escolhe o modo.', true); showTab('net'); return; }
         const modeKeys = Object.keys(MODES);
         setMode(modeKeys[(modeKeys.indexOf(currentModeKey) + 1) % modeKeys.length]);
       });
@@ -1499,6 +1546,101 @@
         leftArmPivot.position.set(-0.045, -0.072, -0.04);
         leftArmPivot.rotation.set(0.20, 0.14, -0.04);
       }
+
+      // Duelo: anfitrião mantém vida e placar; os dois usam a mesma sequência de rounds.
+      const duel = { id: '', phase: 'idle', round: 0, hostHealth: 100, guestHealth: 100, hostWins: 0, guestWins: 0, timer: null };
+      function resetDuel() {
+        clearTimeout(duel.timer);
+        Object.assign(duel, { id: '', phase: 'idle', round: 0, timer: null });
+        document.getElementById('duel-hud').classList.add('hidden');
+        document.getElementById('duel-invite').classList.add('hidden');
+        document.getElementById('duel-invite').classList.remove('flex');
+      }
+      function endDuel(message) {
+        clearTimeout(duel.timer);
+        if (inLobby) { resetDuel(); setRoomFeedback(message, true); return; }
+        duel.phase = 'finished';
+        isFiring = false;
+        document.getElementById('duel-message').textContent = message + ' Volte ao lobby.';
+      }
+      function updateDuelHud(message) {
+        document.getElementById('duel-hud').classList.remove('hidden');
+        document.getElementById('duel-score').textContent = `ROUND ${duel.round || 1} • VOCÊ ${isHost ? duel.hostWins : duel.guestWins} × ${isHost ? duel.guestWins : duel.hostWins} ADVERSÁRIO`;
+        document.getElementById('duel-health').textContent = `VIDA ${isHost ? duel.hostHealth : duel.guestHealth}/100 • ${WEAPONS[currentWeaponKey].name} • MUNIÇÃO ${magAmmo}`;
+        if (message !== undefined) document.getElementById('duel-message').textContent = message;
+      }
+      function sendDuelSnapshot(message, spawn = false) {
+        const snapshot = { type: 'duel_snapshot', id: duel.id, phase: duel.phase, round: duel.round,
+          hostHealth: duel.hostHealth, guestHealth: duel.guestHealth, hostWins: duel.hostWins, guestWins: duel.guestWins, message, spawn };
+        broadcastData(snapshot);
+        updateDuelHud(message);
+      }
+      function spawnDuelPlayer() {
+        playerPos.set(ARENA_X, 0, isHost ? 17 : -17);
+        playerVel.set(0, 0, 0);
+        yaw = isHost ? 0 : Math.PI;
+        pitch = 0; isSliding = false; isFiring = false; isADS = false; isGrounded = true;
+        magAmmo = WEAPONS[currentWeaponKey].magSize;
+        fireCooldown = 0;
+        resetWeaponTransforms();
+        // Não interpolar a partir da posição do round anterior.
+        remotePlayers.forEach(rp => {
+          rp.targetPos.set(ARENA_X, 0, isHost ? -17 : 17);
+          rp.rig.root.position.copy(rp.targetPos);
+        });
+      }
+      function startDuelRound() {
+        if (!isHost || duel.phase === 'idle' || !Array.from(connections.values()).some(c => c.open)) return;
+        duel.round++;
+        duel.hostHealth = duel.guestHealth = 100;
+        duel.phase = 'active';
+        spawnDuelPlayer();
+        sendDuelSnapshot('LUTE!', true);
+      }
+      function applyDuelSnapshot(data) {
+        const newRound = data.spawn && data.round !== duel.round;
+        Object.assign(duel, { phase: data.phase, round: data.round, hostHealth: data.hostHealth,
+          guestHealth: data.guestHealth, hostWins: data.hostWins, guestWins: data.guestWins });
+        if (newRound) spawnDuelPlayer();
+        if (duel.phase !== 'active') isFiring = false;
+        updateDuelHud(data.message);
+      }
+      function applyDuelHit(victim, weapon, head) {
+        if (!isHost || duel.phase !== 'active') return;
+        const key = victim === 'host' ? 'hostHealth' : 'guestHealth';
+        duel[key] = Math.max(0, duel[key] - (head ? WEAPONS[weapon].headDmg : WEAPONS[weapon].bodyDmg));
+        if (duel[key] > 0) { sendDuelSnapshot('LUTE!'); return; }
+        duel[victim === 'host' ? 'guestWins' : 'hostWins']++;
+        isFiring = false;
+        if (duel.hostWins === 2 || duel.guestWins === 2) {
+          duel.phase = 'finished';
+          sendDuelSnapshot((duel.hostWins === 2 ? 'ANFITRIÃO' : 'CONVIDADO') + ' VENCEU A PARTIDA! Volte ao lobby.');
+        } else {
+          duel.phase = 'between';
+          sendDuelSnapshot((victim === 'host' ? 'CONVIDADO' : 'ANFITRIÃO') + ' VENCEU O ROUND! Próximo em 3 segundos.');
+          duel.timer = setTimeout(startDuelRound, 3000);
+        }
+      }
+      function beginDuel() {
+        if (!roomCode || !isHost || Array.from(connections.values()).filter(c => c.open).length !== 1) {
+          setRoomFeedback(!isHost && roomCode ? 'Aguarde o anfitrião iniciar a arena.' : 'A arena exige uma sala com exatamente 2 jogadores.', true);
+          showTab('net'); return;
+        }
+        Object.assign(duel, { id: Date.now().toString(36) + Math.random().toString(36).slice(2), phase: 'waiting', round: 0,
+          hostHealth: 100, guestHealth: 100, hostWins: 0, guestWins: 0 });
+        enterMatch();
+        updateDuelHud('Aguardando o adversário entrar...');
+        broadcastData({ type: 'duel_invite', id: duel.id });
+      }
+      document.getElementById('duel-ready').addEventListener('click', () => {
+        if (duel.phase !== 'invited') return;
+        document.getElementById('duel-invite').classList.add('hidden');
+        document.getElementById('duel-invite').classList.remove('flex');
+        duel.phase = 'waiting';
+        enterMatch();
+        updateDuelHud('Aguardando o início...');
+        broadcastData({ type: 'duel_ready', id: duel.id });
+      });
 
       function enterMatch() {
         initAudio();
@@ -1550,6 +1692,7 @@
       }
 
       function returnToLobby() {
+        if (duel.phase !== 'idle') { broadcastData({ type: 'duel_leave', id: duel.id }); resetDuel(); }
         isFiring = false;
         isADS = false;
         resetWeaponTransforms();
@@ -1600,7 +1743,10 @@
         }
       }
 
-      document.getElementById('deploy-btn').addEventListener('click', enterMatch);
+      document.getElementById('deploy-btn').addEventListener('click', () => {
+        if (currentModeKey === 'arena') beginDuel();
+        else enterMatch();
+      });
       document.getElementById('pause-btn').addEventListener('click', pauseMatch);
       document.getElementById('resume-btn').addEventListener('click', resumeMatch);
       document.getElementById('back-lobby-btn').addEventListener('click', returnToLobby);
@@ -2012,6 +2158,7 @@
       }, { passive: false });
 
       function triggerSlide() {
+        if (duel.phase !== 'idle' && duel.phase !== 'active') return;
         if (isGrounded && !isSliding && slideCooldown <= 0) {
           const moveInput = getMoveVector();
           if (moveInput.lengthSq() > 0.01) {
@@ -2025,6 +2172,7 @@
       }
 
       function triggerJump() {
+        if (duel.phase !== 'idle' && duel.phase !== 'active') return;
         if (isGrounded) {
           playerVel.y = 7.4;
           isGrounded = false;
@@ -2110,6 +2258,7 @@
       }
 
       function shoot() {
+        if (duel.phase !== 'idle' && duel.phase !== 'active') return;
         const wCfg = WEAPONS[currentWeaponKey];
         if (isReloading || magAmmo <= 0) {
           if (!isReloading && magAmmo <= 0) startReload();
@@ -2166,7 +2315,10 @@
             showHitmarker(isHead);
             const conn = connections.get(remotePeerId);
             if (conn && conn.open) {
-              conn.send({ type: 'hit_notify', isHead: !!isHead });
+              if (duel.phase === 'active') {
+                if (isHost) applyDuelHit('guest', currentWeaponKey, !!isHead);
+                else conn.send({ type: 'duel_hit', id: duel.id, round: duel.round, weapon: currentWeaponKey, head: !!isHead });
+              } else if (duel.phase === 'idle') conn.send({ type: 'hit_notify', isHead: !!isHead });
             }
           }
         } else {
@@ -2304,7 +2456,7 @@
         const list = byId('squad-list');
         if (!list) return;
         const others = [];
-        remotePlayers.forEach((rp, id) => others.push('JOGADOR ' + id.slice(-4).toUpperCase()));
+        connections.forEach((conn, id) => { if (conn.open) others.push('JOGADOR ' + id.slice(-4).toUpperCase()); });
         let html = `<div class="flex items-center gap-2 rounded-xl border-2 border-sky-300/50 bg-sky-400/15 px-2 py-1">` +
           `<span class="sq-ico grid h-6 w-6 shrink-0 place-items-center rounded-md bg-slate-800"><span class="h-1.5 w-3.5 rounded-sm" style="background:#22d3ee"></span></span>` +
           `<span class="truncate text-xs font-black text-white">VOCÊ</span>${crownSvg}</div>`;
@@ -2464,7 +2616,7 @@
             shoot();
           }
 
-          const moveVec = getMoveVector();
+          const moveVec = (duel.phase !== 'idle' && duel.phase !== 'active') ? new THREE.Vector3() : getMoveVector();
           const joyMagnitude = Math.hypot(joyInput.x, joyInput.y);
           const isSprinting = ((keys['ShiftLeft'] || keys['ShiftRight']) || joyMagnitude > 0.85 || gpState.sprint) && !isADS && !isSliding && moveVec.lengthSq() > 0;
           let horizVel = new THREE.Vector3();
@@ -2561,6 +2713,7 @@
           );
 
           crosshairEl.style.opacity = isADS ? '0' : '1';
+          if (duel.phase !== 'idle') updateDuelHud();
 
           netSendTimer += dt;
           if (connections.size > 0 && netSendTimer >= 0.05) {
