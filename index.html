@@ -375,6 +375,7 @@
             <span class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-slate-700 text-white"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h12M15 3l4 4-4 4M17 17H5M9 13l-4 4 4 4"/></svg></span>
           </button>
 
+          <button id="bot-duel-btn" class="hidden w-full rounded-xl border-2 border-sky-300 bg-sky-700/90 px-2 py-2 text-xs font-black tracking-wider text-white transition hover:bg-sky-600" type="button">🤖 JOGAR CONTRA BOT</button>
           <button id="deploy-btn" class="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-200 bg-gradient-to-b from-amber-300 to-amber-500 py-2 text-lg font-black tracking-wider text-amber-950 shadow-[0_4px_0_#b45309] transition">
             <span>INICIAR</span>
             <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
@@ -387,6 +388,15 @@
         <div class="text-[8px] sm:text-[9px] font-bold tracking-widest text-white/80">ARRASTE A TELA PARA GIRAR O OPERADOR</div>
         <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-black tracking-wider text-white"><svg viewBox="0 0 40 16" class="h-3 w-7" fill="currentColor"><path d="M0 6h22l4-2h14v3H27l-3 2h-6l-2 7h-5l1-7H0z"/></svg><span id="lobby-summary"></span></div>
       </div>
+    </div>
+  </div>
+
+  <div id="duel-result" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-950/85 p-4">
+    <div class="w-full max-w-sm rounded-2xl border-2 border-amber-300/70 bg-slate-900 p-6 text-center shadow-2xl">
+      <div class="text-xs font-black tracking-widest text-amber-300">ARENA DOS GLADIADORES</div>
+      <h2 id="duel-result-title" class="mt-2 text-3xl font-black text-white"></h2>
+      <p id="duel-result-score" class="mt-3 text-sm font-bold text-slate-300"></p>
+      <button id="duel-result-lobby" class="mt-5 w-full rounded-lg bg-amber-400 px-4 py-3 text-sm font-black text-slate-950">VOLTAR AO LOBBY</button>
     </div>
   </div>
 
@@ -1222,6 +1232,11 @@
       [[0,-8], [0,8]].forEach(([x, z]) => {
         addBoxCollider(ARENA_X + x, 0.8, z, 1.3, 1.6, 3, 0x8d694b);
       });
+      // Coberturas adicionais em rotas laterais, simétricas para os dois lados.
+      [[-16,-5], [16,5], [-16,5], [16,-5]].forEach(([x, z]) => {
+        addBoxCollider(ARENA_X + x, 0.65, z, 2.4, 1.3, 2.4, 0x77583f);
+        arenaMesh(new THREE.BoxGeometry(2.6, 0.12, 2.6), 0xbb9470, x, 1.35, z);
+      });
       // Bandeiras nas arquibancadas dão identidade ao cenário.
       for (let i = 0; i < 8; i++) {
         const a = i * Math.PI / 4;
@@ -1644,6 +1659,7 @@
         currentModeKey = key;
         document.getElementById('lobby-mode-title').textContent = MODES[key].title;
         document.getElementById('mode-card').title = MODES[key].desc;
+        document.getElementById('bot-duel-btn').classList.toggle('hidden', key !== 'arena');
         if (isHost && inLobby) broadcastData({ type: 'duel_mode', mode: key });
       }
       document.getElementById('mode-card').addEventListener('click', () => {
@@ -1668,10 +1684,16 @@
       }
 
       // Duelo: anfitrião mantém vida e placar; os dois usam a mesma sequência de rounds.
-      const duel = { id: '', phase: 'idle', round: 0, hostHealth: 100, guestHealth: 100, hostWins: 0, guestWins: 0, timer: null };
+      const duel = { id: '', phase: 'idle', round: 0, hostHealth: 100, guestHealth: 100, hostWins: 0, guestWins: 0, timer: null, bot: false };
+      const BOT_ID = '__arena_bot__';
+      const botAI = { fireTimer: 1, directionTimer: 0, strafe: 1 };
+      const duelHost = () => isHost || duel.bot;
       function resetDuel() {
         clearTimeout(duel.timer);
-        Object.assign(duel, { id: '', phase: 'idle', round: 0, timer: null });
+        if (duel.bot) removeRemotePlayer(BOT_ID);
+        Object.assign(duel, { id: '', phase: 'idle', round: 0, timer: null, bot: false });
+        document.getElementById('duel-result').classList.add('hidden');
+        document.getElementById('duel-result').classList.remove('flex');
         document.getElementById('duel-hud').classList.add('hidden');
         document.getElementById('duel-invite').classList.add('hidden');
         document.getElementById('duel-invite').classList.remove('flex');
@@ -1685,9 +1707,17 @@
       }
       function updateDuelHud(message) {
         document.getElementById('duel-hud').classList.remove('hidden');
-        document.getElementById('duel-score').textContent = `ROUND ${duel.round || 1} • VOCÊ ${isHost ? duel.hostWins : duel.guestWins} × ${isHost ? duel.guestWins : duel.hostWins} ADVERSÁRIO`;
-        document.getElementById('duel-health').textContent = `VIDA ${isHost ? duel.hostHealth : duel.guestHealth}/100 • ${WEAPONS[currentWeaponKey].name} • MUNIÇÃO ${magAmmo}`;
+        document.getElementById('duel-score').textContent = `ROUND ${duel.round || 1} • VOCÊ ${duelHost() ? duel.hostWins : duel.guestWins} × ${duelHost() ? duel.guestWins : duel.hostWins} ${duel.bot ? 'BOT' : 'ADVERSÁRIO'}`;
+        document.getElementById('duel-health').textContent = `VIDA ${duelHost() ? duel.hostHealth : duel.guestHealth}/100 • RIVAL ${duelHost() ? duel.guestHealth : duel.hostHealth}/100 • ${WEAPONS[currentWeaponKey].name} · ${magAmmo}`;
         if (message !== undefined) document.getElementById('duel-message').textContent = message;
+        if (duel.phase === 'finished') {
+          const won = duelHost() ? duel.hostWins === 2 : duel.guestWins === 2;
+          document.getElementById('duel-result-title').textContent = won ? 'VITÓRIA!' : 'DERROTA';
+          document.getElementById('duel-result-score').textContent = `PLACAR: VOCÊ ${duelHost() ? duel.hostWins : duel.guestWins} × ${duelHost() ? duel.guestWins : duel.hostWins} ${duel.bot ? 'BOT' : 'ADVERSÁRIO'}`;
+          document.getElementById('duel-result').classList.remove('hidden');
+          document.getElementById('duel-result').classList.add('flex');
+          if (document.pointerLockElement) document.exitPointerLock();
+        }
       }
       function sendDuelSnapshot(message, spawn = false) {
         const snapshot = { type: 'duel_snapshot', id: duel.id, phase: duel.phase, round: duel.round,
@@ -1696,26 +1726,41 @@
         updateDuelHud(message);
       }
       function spawnDuelPlayer() {
-        playerPos.set(ARENA_X, 0, isHost ? 17 : -17);
+        playerPos.set(ARENA_X, 0, duelHost() ? 17 : -17);
         playerVel.set(0, 0, 0);
-        yaw = isHost ? 0 : Math.PI;
+        yaw = duelHost() ? 0 : Math.PI;
         pitch = 0; isSliding = false; isFiring = false; isADS = false; isGrounded = true;
         magAmmo = WEAPONS[currentWeaponKey].magSize;
         fireCooldown = 0;
         resetWeaponTransforms();
         // Não interpolar a partir da posição do round anterior.
         remotePlayers.forEach(rp => {
-          rp.targetPos.set(ARENA_X, 0, isHost ? -17 : 17);
+          rp.targetPos.set(ARENA_X, 0, duelHost() ? -17 : 17);
           rp.rig.root.position.copy(rp.targetPos);
         });
       }
       function startDuelRound() {
-        if (!isHost || duel.phase === 'idle' || !Array.from(connections.values()).some(c => c.open)) return;
+        if (!duelHost() || duel.phase === 'idle' || (!duel.bot && !Array.from(connections.values()).some(c => c.open))) return;
         duel.round++;
         duel.hostHealth = duel.guestHealth = 100;
-        duel.phase = 'active';
+        duel.phase = 'countdown';
         spawnDuelPlayer();
-        sendDuelSnapshot('LUTE!', true);
+        botAI.fireTimer = 1.2; botAI.directionTimer = 0;
+        let count = 3;
+        const id = duel.id;
+        sendDuelSnapshot('COMEÇA EM ' + count, true);
+        function nextCount() {
+          if (duel.id !== id || duel.phase !== 'countdown') return;
+          count--;
+          if (count > 0) {
+            sendDuelSnapshot('COMEÇA EM ' + count);
+            duel.timer = setTimeout(nextCount, 1000);
+          } else {
+            duel.phase = 'active';
+            sendDuelSnapshot('LUTE!');
+          }
+        }
+        duel.timer = setTimeout(nextCount, 1000);
       }
       function applyDuelSnapshot(data) {
         const newRound = data.spawn && data.round !== duel.round;
@@ -1726,7 +1771,7 @@
         updateDuelHud(data.message);
       }
       function applyDuelHit(victim, weapon, head) {
-        if (!isHost || duel.phase !== 'active') return;
+        if (!duelHost() || duel.phase !== 'active') return;
         const key = victim === 'host' ? 'hostHealth' : 'guestHealth';
         duel[key] = Math.max(0, duel[key] - (head ? WEAPONS[weapon].headDmg : WEAPONS[weapon].bodyDmg));
         if (duel[key] > 0) { sendDuelSnapshot('LUTE!'); return; }
@@ -1734,10 +1779,10 @@
         isFiring = false;
         if (duel.hostWins === 2 || duel.guestWins === 2) {
           duel.phase = 'finished';
-          sendDuelSnapshot((duel.hostWins === 2 ? 'ANFITRIÃO' : 'CONVIDADO') + ' VENCEU A PARTIDA! Volte ao lobby.');
+          sendDuelSnapshot((duel.hostWins === 2 ? 'ANFITRIÃO' : (duel.bot ? 'BOT' : 'CONVIDADO')) + ' VENCEU A PARTIDA!');
         } else {
           duel.phase = 'between';
-          sendDuelSnapshot((victim === 'host' ? 'CONVIDADO' : 'ANFITRIÃO') + ' VENCEU O ROUND! Próximo em 3 segundos.');
+          sendDuelSnapshot((victim === 'host' ? (duel.bot ? 'BOT' : 'CONVIDADO') : 'ANFITRIÃO') + ' VENCEU O ROUND! Próximo em 3 segundos.');
           duel.timer = setTimeout(startDuelRound, 3000);
         }
       }
@@ -1746,12 +1791,26 @@
           setRoomFeedback(!isHost && roomCode ? 'Aguarde o anfitrião iniciar a arena.' : 'A arena exige uma sala com exatamente 2 jogadores.', true);
           showTab('net'); return;
         }
-        Object.assign(duel, { id: Date.now().toString(36) + Math.random().toString(36).slice(2), phase: 'waiting', round: 0,
+        Object.assign(duel, { id: Date.now().toString(36) + Math.random().toString(36).slice(2), bot: false, phase: 'waiting', round: 0,
           hostHealth: 100, guestHealth: 100, hostWins: 0, guestWins: 0 });
         enterMatch();
         updateDuelHud('Aguardando o adversário entrar...');
         broadcastData({ type: 'duel_invite', id: duel.id });
       }
+      document.getElementById('bot-duel-btn').addEventListener('click', () => {
+        if (roomCode || connections.size || peer) {
+          setRoomFeedback('Desconecte da sala online para jogar contra o bot.', true);
+          showTab('net'); return;
+        }
+        Object.assign(duel, { id: 'bot-' + Date.now().toString(36), bot: true, phase: 'waiting', round: 0,
+          hostHealth: 100, guestHealth: 100, hostWins: 0, guestWins: 0 });
+        const bot = getOrCreateRemotePlayer(BOT_ID);
+        bot.targetPos.set(ARENA_X, 0, -17);
+        bot.rig.root.position.copy(bot.targetPos);
+        enterMatch();
+        startDuelRound();
+      });
+      document.getElementById('duel-result-lobby').addEventListener('click', returnToLobby);
       document.getElementById('duel-ready').addEventListener('click', () => {
         if (duel.phase !== 'invited') return;
         document.getElementById('duel-invite').classList.add('hidden');
@@ -1874,10 +1933,12 @@
         }
       }
 
-      document.getElementById('deploy-btn').addEventListener('click', () => {
-        if (currentModeKey === 'arena') beginDuel();
-        else enterMatch();
-      });
+      function startSelectedMatch() {
+        if (currentModeKey !== 'arena') enterMatch();
+        else if (!roomCode && !peer && connections.size === 0) document.getElementById('bot-duel-btn').click();
+        else beginDuel();
+      }
+      document.getElementById('deploy-btn').addEventListener('click', startSelectedMatch);
       document.getElementById('pause-btn').addEventListener('click', pauseMatch);
       document.getElementById('resume-btn').addEventListener('click', resumeMatch);
       document.getElementById('back-lobby-btn').addEventListener('click', returnToLobby);
@@ -1924,7 +1985,7 @@
       document.addEventListener('pointerlockchange', () => {
         if (isTouchDevice || inLobby) return;
         const locked = document.pointerLockElement === renderer.domElement;
-        if (!locked && !isPaused) {
+        if (!locked && !isPaused && duel.phase !== 'finished') {
           pauseMatch();
         }
       });
@@ -2095,7 +2156,7 @@
 
         if (btnStart && !gpState.prevStart) {
           initAudio();
-          if (inLobby) enterMatch();
+          if (inLobby) startSelectedMatch();
           else if (isPaused) resumeMatch();
           else pauseMatch();
         }
@@ -2106,7 +2167,7 @@
             lobbyOperator.rotation.y += rx * 2.2 * dt;
           }
           if (btnA && !gpState.prevJump) {
-            enterMatch();
+            startSelectedMatch();
           }
           gpState.prevJump = btnA;
           return;
@@ -2575,7 +2636,9 @@
             playHitSound(isHead);
             showHitmarker(isHead);
             const conn = connections.get(remotePeerId);
-            if (conn && conn.open) {
+            if (duel.bot && remotePeerId === BOT_ID && duel.phase === 'active') {
+              applyDuelHit('guest', currentWeaponKey, !!isHead);
+            } else if (conn && conn.open) {
               if (duel.phase === 'active') {
                 if (isHost) applyDuelHit('guest', currentWeaponKey, !!isHead);
                 else conn.send({ type: 'duel_hit', id: duel.id, round: duel.round, weapon: currentWeaponKey, head: !!isHead });
@@ -2615,6 +2678,45 @@
           }
         }
         return false;
+      }
+
+      // Bot local: movimenta-se, tenta flanquear coberturas e só atira com visão livre.
+      const botRay = new THREE.Raycaster();
+      function updateArenaBot(dt) {
+        if (!duel.bot || duel.phase !== 'active' || !gameActive || isPaused) return;
+        const bot = remotePlayers.get(BOT_ID);
+        if (!bot) return;
+        const dx = playerPos.x - bot.targetPos.x, dz = playerPos.z - bot.targetPos.z;
+        const distance = Math.hypot(dx, dz) || 0.001;
+        bot.targetYaw = Math.atan2(-dx, -dz);
+        botAI.directionTimer -= dt;
+        if (botAI.directionTimer <= 0) { botAI.strafe *= -1; botAI.directionTimer = 2.2 + Math.random() * 1.5; }
+        const approach = distance > 11 ? 0.9 : (distance < 6 ? -0.6 : 0);
+        const vx = dx / distance * approach + (-dz / distance) * botAI.strafe * 0.55;
+        const vz = dz / distance * approach + (dx / distance) * botAI.strafe * 0.55;
+        const next = bot.targetPos.clone();
+        next.x += vx * 3 * dt;
+        if (!collidesAt(next, 1.85)) bot.targetPos.x = next.x;
+        else botAI.strafe *= -1;
+        next.copy(bot.targetPos); next.z += vz * 3 * dt;
+        if (!collidesAt(next, 1.85)) bot.targetPos.z = next.z;
+        else botAI.strafe *= -1;
+        botAI.fireTimer -= dt;
+        if (botAI.fireTimer > 0) return;
+        botAI.fireTimer = 0.8 + Math.random() * 0.4;
+        const from = bot.rig.root.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+        const to = playerPos.clone().add(new THREE.Vector3(0, currentEye, 0));
+        const direction = to.clone().sub(from);
+        const length = direction.length();
+        if (length > 45 || length < 0.1) return;
+        scene.updateMatrixWorld(true);
+        botRay.set(from, direction.normalize()); botRay.far = length;
+        if (botRay.intersectObjects(coverMeshes, false).length) return;
+        const hit = Math.random() < 0.6;
+        const end = hit ? to : to.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 0.4, (Math.random() - 0.5) * 2));
+        spawnTracer(from, end);
+        playShootSound(true, 0.4);
+        if (hit) applyDuelHit('host', 'smg', false);
       }
 
       // =========================================================
@@ -2818,6 +2920,7 @@
       }
 
       showTab('play');
+      setMode(currentModeKey);
       applySkin(profile.skin);
       refreshProfileUI();
       renderSquad();
@@ -2835,6 +2938,7 @@
 
         pollGamepad(dt);
         tickTrainingChallenge();
+        updateArenaBot(dt);
 
         remotePlayers.forEach((rp) => {
           const prevX = rp.rig.root.position.x;
