@@ -151,6 +151,13 @@
       <div id="duel-health" class="mt-1 text-white"></div>
       <div id="duel-message" class="mt-1 text-sky-300"></div>
     </div>
+    <div id="training-challenge" class="pointer-events-auto fixed left-3 top-14 z-20 w-[min(190px,45vw)] rounded-lg border border-amber-400/50 bg-slate-950/85 p-2 text-[10px] font-bold text-slate-200 shadow-lg">
+      <div class="flex items-center justify-between gap-1 text-amber-300"><span>DESAFIO DE TIRO</span><span id="challenge-timer">60s</span></div>
+      <div id="challenge-stats" class="mt-1 leading-snug">ALVOS 0 · ACERTOS 0 · TIROS 0</div>
+      <div id="challenge-best" class="mt-1 text-sky-300">RECORDE: 0 ALVOS</div>
+      <div id="challenge-result" class="mt-1 text-emerald-300" aria-live="polite">TREINO LIVRE</div>
+      <button id="challenge-start" class="mt-1.5 w-full rounded border border-amber-300 bg-amber-400 px-2 py-1.5 text-[10px] font-black text-slate-950 disabled:opacity-60" type="button">INICIAR 60s</button>
+    </div>
     <div id="gamepad-map-message" class="pointer-events-none fixed bottom-32 left-1/2 z-20 hidden w-[min(90vw,360px)] -translate-x-1/2 rounded-lg border border-sky-400/70 bg-slate-950/95 px-4 py-3 text-center text-xs font-bold text-white" role="status" aria-live="polite"></div>
     <!-- Centro: Mira Dinâmica + Hitmarker -->
     <div id="crosshair-container" class="pointer-events-none fixed inset-0 flex items-center justify-center">
@@ -1357,6 +1364,7 @@
         prevSlide: false,
         prevReload: false,
         prevSwitch: false,
+        prevChallenge: false,
         prevAds: false,
         prevStart: false
       };
@@ -1756,6 +1764,8 @@
 
       function enterMatch() {
         initAudio();
+        resetTrainingChallenge();
+        document.getElementById('training-challenge').classList.toggle('hidden', currentModeKey === 'arena');
         trainingAmmo = { ar: WEAPONS.ar.magSize, smg: WEAPONS.smg.magSize };
         if (currentModeKey !== 'arena') magAmmo = trainingAmmo[currentWeaponKey];
         document.getElementById('btn-switch-weapon').classList.toggle('hidden', currentModeKey === 'arena');
@@ -1808,6 +1818,7 @@
       }
 
       function returnToLobby() {
+        resetTrainingChallenge();
         if (gamepadBinding) cancelGamepadBinding();
         if (duel.phase !== 'idle') { broadcastData({ type: 'duel_leave', id: duel.id }); resetDuel(); }
         isFiring = false;
@@ -1838,8 +1849,10 @@
 
       function pauseMatch() {
         if (inLobby) return;
+        tickTrainingChallenge();
         isPaused = true;
         gameActive = false;
+        if (trainingChallenge.active) trainingChallenge.lastTime = null;
         isFiring = false;
         isADS = false;
         pauseOverlayEl.classList.remove('hidden');
@@ -1853,6 +1866,7 @@
         if (inLobby) return;
         isPaused = false;
         gameActive = true;
+        if (trainingChallenge.active) trainingChallenge.lastTime = performance.now();
         pauseOverlayEl.classList.add('hidden');
         pauseOverlayEl.classList.remove('flex');
         if (!isTouchDevice) {
@@ -2023,6 +2037,7 @@
           gpState.lookY = 0;
           gpState.sprint = false;
           gpState.prevSwitch = false;
+          gpState.prevChallenge = false;
           return;
         }
 
@@ -2073,6 +2088,8 @@
         const btnL2 = button(6);
         const btnR2 = button(7);
         const btnStart = button(9);
+        const challengePressed = button(12) && !gpState.prevChallenge;
+        gpState.prevChallenge = button(12);
 
         gpState.sprint = btnL3 || Math.hypot(lx, ly) > 0.88;
 
@@ -2097,6 +2114,7 @@
 
         if (!gameActive) return;
         if (switchPressed) switchTrainingWeapon();
+        if (challengePressed) startTrainingChallenge();
 
         const userLooking = (rx !== 0 || ry !== 0);
         if (userLooking) {
@@ -2377,6 +2395,7 @@
         if (e.code === 'Space') triggerJump();
         if (e.code === 'KeyR' && !isReloading && magAmmo < WEAPONS[currentWeaponKey].magSize) startReload();
         if (e.code === 'KeyQ' && !e.repeat) switchTrainingWeapon();
+        if (e.code === 'KeyT' && !e.repeat) startTrainingChallenge();
       });
 
       window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -2422,6 +2441,56 @@
         reloadElapsed = 0;
       }
 
+      // Desafio local e opcional; o cronômetro só avança enquanto o jogo não está pausado.
+      const TRAINING_RECORD_KEY = 'nexuswz_training_best_v1';
+      let trainingBest = 0;
+      try {
+        const best = Number(localStorage.getItem(TRAINING_RECORD_KEY));
+        if (Number.isSafeInteger(best) && best >= 0) trainingBest = best;
+      } catch (e) {}
+      const trainingChallenge = { active: false, remaining: 60000, lastTime: null, shots: 0, hits: 0, kills: 0 };
+      function renderTrainingChallenge(message) {
+        document.getElementById('challenge-timer').textContent = Math.ceil(trainingChallenge.remaining / 1000) + 's';
+        document.getElementById('challenge-stats').textContent = `ALVOS ${trainingChallenge.kills} · ACERTOS ${trainingChallenge.hits} · TIROS ${trainingChallenge.shots}`;
+        document.getElementById('challenge-best').textContent = `RECORDE: ${trainingBest} ALVOS`;
+        if (message !== undefined) document.getElementById('challenge-result').textContent = message;
+        const button = document.getElementById('challenge-start');
+        button.disabled = trainingChallenge.active;
+        button.textContent = trainingChallenge.active ? 'EM ANDAMENTO' : (trainingChallenge.remaining === 60000 ? 'INICIAR 60s' : 'JOGAR NOVAMENTE');
+      }
+      function resetTrainingChallenge() {
+        Object.assign(trainingChallenge, { active: false, remaining: 60000, lastTime: null, shots: 0, hits: 0, kills: 0 });
+        renderTrainingChallenge('TREINO LIVRE');
+      }
+      function startTrainingChallenge() {
+        if (inLobby || !gameActive || isPaused || currentModeKey === 'arena' || trainingChallenge.active) return;
+        Object.assign(trainingChallenge, { active: true, remaining: 60000, lastTime: performance.now(), shots: 0, hits: 0, kills: 0 });
+        targets.forEach(t => { t.hp = 100; t.down = false; t.respawnTimer = 0; t.group.rotation.x = 0; });
+        renderTrainingChallenge('ACERTE OS ALVOS!');
+      }
+      function tickTrainingChallenge() {
+        if (!trainingChallenge.active) return;
+        const now = performance.now();
+        if (trainingChallenge.lastTime !== null && gameActive && !inLobby && !isPaused) {
+          trainingChallenge.remaining = Math.max(0, trainingChallenge.remaining - Math.max(0, now - trainingChallenge.lastTime));
+        }
+        trainingChallenge.lastTime = now;
+        if (trainingChallenge.remaining <= 0) {
+          trainingChallenge.active = false;
+          const accuracy = trainingChallenge.shots ? Math.round(trainingChallenge.hits * 100 / trainingChallenge.shots) : 0;
+          const record = trainingChallenge.kills > trainingBest;
+          if (record) {
+            trainingBest = trainingChallenge.kills;
+            try { localStorage.setItem(TRAINING_RECORD_KEY, String(trainingBest)); } catch (e) {}
+          }
+          renderTrainingChallenge((record ? 'NOVO RECORDE! ' : 'FIM! ') + `PRECISÃO ${accuracy}%`);
+        } else renderTrainingChallenge();
+      }
+      const challengeStartButton = document.getElementById('challenge-start');
+      challengeStartButton.addEventListener('mousedown', e => e.stopPropagation());
+      challengeStartButton.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+      challengeStartButton.addEventListener('click', e => { e.stopPropagation(); startTrainingChallenge(); });
+
       // =========================================================
       // 6. SISTEMA DE TIRO (ALVOS + JOGADORES ONLINE)
       // =========================================================
@@ -2453,6 +2522,8 @@
           return;
         }
 
+        tickTrainingChallenge();
+        if (trainingChallenge.active) trainingChallenge.shots++;
         magAmmo--;
         fireCooldown = wCfg.fireInterval;
         recoilOffset = isADS ? 0.02 : 0.036;
@@ -2484,6 +2555,7 @@
           const { target, isHead, remotePeerId } = hit.object.userData;
 
           if (target && !target.down) {
+            if (trainingChallenge.active) trainingChallenge.hits++;
             const dmg = isHead ? wCfg.headDmg : wCfg.bodyDmg;
             target.hp -= dmg;
             playHitSound(isHead);
@@ -2493,6 +2565,7 @@
             setTimeout(() => { hit.object.material.emissive.setHex(0x000000); }, 80);
 
             if (target.hp <= 0) {
+              if (trainingChallenge.active) trainingChallenge.kills++;
               target.down = true;
               target.respawnTimer = 2.4;
               target.group.rotation.x = Math.PI / 2;
@@ -2761,12 +2834,14 @@
         const elapsed = clock.elapsedTime;
 
         pollGamepad(dt);
+        tickTrainingChallenge();
 
         remotePlayers.forEach((rp) => {
           const prevX = rp.rig.root.position.x;
           const prevZ = rp.rig.root.position.z;
           rp.rig.root.position.lerp(rp.targetPos, Math.min(1, dt * 16));
-          rp.rig.root.rotation.y = rp.targetYaw;
+          // A câmera olha para -Z, mas o operador foi modelado olhando para +Z.
+          rp.rig.root.rotation.y = rp.targetYaw + Math.PI;
 
           const movedDist = Math.hypot(rp.rig.root.position.x - prevX, rp.rig.root.position.z - prevZ);
           if (movedDist > 0.002 && !rp.targetSliding) {
