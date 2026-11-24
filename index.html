@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>WZ Low-Poly Training Range - NEXUS</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <link rel="stylesheet" href="./assets/styles.css" />
+  <script src="./assets/three.min.js"></script>
+  <script src="./assets/peerjs.min.js"></script>
   <style>
     body {
       margin: 0;
@@ -18,6 +18,12 @@
     }
     canvas { display: block; width: 100vw; height: 100vh; }
 
+    #damage-flash { position:fixed; inset:0; pointer-events:none; z-index:5; opacity:0; background:radial-gradient(ellipse at center,transparent 40%,rgba(255,20,20,.72) 100%); transition:opacity .25s ease-out; }
+    .duel-bars { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:5px; }
+    .duel-bar { height:5px; background:#1e293b; border-radius:9px; overflow:hidden; }
+    .duel-bar span { display:block; height:100%; background:#34d399; transition:width .15s; }
+    .duel-bar.enemy span { background:#fb7185; }
+    @media (prefers-reduced-motion:reduce) { #damage-flash { transition:none; } }
     .touch-btn {
       backdrop-filter: blur(4px);
       -webkit-backdrop-filter: blur(4px);
@@ -159,9 +165,11 @@
       </div>
     </div>
 
+    <div id="damage-flash" aria-hidden="true"></div>
     <div id="duel-hud" class="hidden fixed top-14 left-1/2 -translate-x-1/2 rounded-lg border border-amber-400/50 bg-slate-950/85 px-4 py-2 text-center text-xs font-bold shadow-lg">
       <div id="duel-score" class="text-amber-300"></div>
       <div id="duel-health" class="mt-1 text-white"></div>
+      <div class="duel-bars" aria-hidden="true"><div class="duel-bar"><span id="duel-life-bar"></span></div><div class="duel-bar enemy"><span id="duel-enemy-bar"></span></div></div>
       <div id="duel-message" class="mt-1 text-sky-300"></div>
     </div>
     <div id="training-challenge" class="pointer-events-auto fixed left-3 top-14 z-20 w-[min(190px,45vw)] rounded-lg border border-amber-400/50 bg-slate-950/85 p-2 text-[10px] font-bold text-slate-200 shadow-lg">
@@ -388,6 +396,11 @@
             <span class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-slate-700 text-white"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h12M15 3l4 4-4 4M17 17H5M9 13l-4 4 4 4"/></svg></span>
           </button>
 
+          <div id="bot-settings" class="hidden rounded-xl border border-sky-300/40 bg-slate-950/80 p-2 text-xs text-white">
+            <label for="bot-difficulty" class="block text-[10px] font-bold text-sky-200">DIFICULDADE DO BOT</label>
+            <select id="bot-difficulty" class="mt-1 w-full rounded bg-slate-800 px-2 py-1.5 text-xs text-white"><option value="easy">FÁCIL</option><option value="normal">NORMAL</option><option value="hard">DIFÍCIL</option></select>
+            <div id="bot-record" class="mt-1 text-[10px] text-slate-300"></div>
+          </div>
           <button id="bot-duel-btn" class="hidden w-full rounded-xl border-2 border-sky-300 bg-sky-700/90 px-2 py-2 text-xs font-black tracking-wider text-white transition hover:bg-sky-600" type="button">🤖 JOGAR CONTRA BOT</button>
           <button id="deploy-btn" class="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-200 bg-gradient-to-b from-amber-300 to-amber-500 py-2 text-lg font-black tracking-wider text-amber-950 shadow-[0_4px_0_#b45309] transition">
             <span>INICIAR</span>
@@ -407,7 +420,7 @@
   <div id="victory-scene" class="hidden" role="dialog" aria-modal="true" aria-labelledby="victory-title">
     <div class="victory-confetti" id="victory-confetti" aria-hidden="true"></div>
     <div><h2 id="victory-title" class="victory-heading">VITÓRIA!</h2><div class="victory-subtitle">VOCÊ VENCEU O DUELO</div></div>
-    <div class="victory-actions"><div id="victory-score" class="victory-score"></div><button id="victory-lobby" class="victory-button" type="button">VOLTAR AO LOBBY</button></div>
+    <div class="victory-actions"><div id="victory-score" class="victory-score"></div><div class="flex flex-wrap justify-center gap-2"><button id="victory-rematch" class="victory-button hidden" type="button">JOGAR NOVAMENTE</button><button id="victory-lobby" class="victory-button" type="button">VOLTAR AO LOBBY</button></div></div>
   </div>
 
   <div id="duel-result" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-950/85 p-4">
@@ -415,6 +428,7 @@
       <div class="text-xs font-black tracking-widest text-amber-300">ARENA DOS GLADIADORES</div>
       <h2 id="duel-result-title" class="mt-2 text-3xl font-black text-white"></h2>
       <p id="duel-result-score" class="mt-3 text-sm font-bold text-slate-300"></p>
+      <button id="duel-result-rematch" class="hidden mt-5 w-full rounded-lg bg-emerald-400 px-4 py-3 text-sm font-black text-slate-950" type="button">JOGAR NOVAMENTE</button>
       <button id="duel-result-lobby" class="mt-5 w-full rounded-lg bg-amber-400 px-4 py-3 text-sm font-black text-slate-950">VOLTAR AO LOBBY</button>
     </div>
   </div>
@@ -424,9 +438,10 @@
        ========================================================= -->
   <div id="pause-overlay" class="fixed inset-0 z-30 hidden items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md">
     <div class="w-full max-w-sm rounded-lg border border-amber-400/40 bg-slate-900/95 p-6 text-center shadow-2xl">
-      <div class="text-[10px] font-bold tracking-[0.25em] text-amber-400">PARTIDA PAUSADA</div>
+      <div id="pause-heading" class="text-[10px] font-bold tracking-[0.25em] text-amber-400">PARTIDA PAUSADA</div>
       <h2 class="mt-1 text-2xl font-black tracking-tight text-white">MENU TÁTICO</h2>
       <p id="pause-error-msg" class="mt-2 hidden text-xs text-rose-400"></p>
+      <p id="pause-online-note" class="mt-2 hidden text-xs font-bold text-amber-300">No online, a partida continua enquanto este menu está aberto.</p>
 
       <div class="mt-5 flex flex-col gap-2.5">
         <button id="resume-btn" class="w-full rounded bg-emerald-500 px-4 py-2.5 text-xs font-black tracking-widest text-slate-950 hover:bg-emerald-400">
@@ -1679,6 +1694,7 @@
         document.getElementById('lobby-mode-title').textContent = MODES[key].title;
         document.getElementById('mode-card').title = MODES[key].desc;
         document.getElementById('bot-duel-btn').classList.toggle('hidden', key !== 'arena');
+        document.getElementById('bot-settings').classList.toggle('hidden', key !== 'arena');
         if (isHost && inLobby) broadcastData({ type: 'duel_mode', mode: key });
       }
       document.getElementById('mode-card').addEventListener('click', () => {
@@ -1705,7 +1721,51 @@
       // Duelo: anfitrião mantém vida e placar; os dois usam a mesma sequência de rounds.
       const duel = { id: '', phase: 'idle', round: 0, hostHealth: 100, guestHealth: 100, hostWins: 0, guestWins: 0, timer: null, bot: false };
       const BOT_ID = '__arena_bot__';
-      const botAI = { fireTimer: 1, directionTimer: 0, strafe: 1 };
+      const BOT_DIFFICULTIES = {
+        easy: { accuracy: 0.38, interval: 1.2, speed: 2.5 },
+        normal: { accuracy: 0.6, interval: 0.8, speed: 3 },
+        hard: { accuracy: 0.78, interval: 0.55, speed: 3.6 }
+      };
+      const BOT_STATS_KEY = 'nexuswz_bot_stats_v1';
+      const BOT_DIFFICULTY_KEY = 'nexuswz_bot_difficulty_v1';
+      const botAI = { fireTimer: 1, directionTimer: 0, strafe: 1, difficulty: 'normal' };
+      const botDifficultyEl = document.getElementById('bot-difficulty');
+      try { const saved = localStorage.getItem(BOT_DIFFICULTY_KEY); if (BOT_DIFFICULTIES[saved]) botDifficultyEl.value = saved; } catch (e) {}
+      botDifficultyEl.addEventListener('change', () => { try { localStorage.setItem(BOT_DIFFICULTY_KEY, botDifficultyEl.value); } catch (e) {} });
+      function getBotStats() {
+        try {
+          const data = JSON.parse(localStorage.getItem(BOT_STATS_KEY) || '{}');
+          return { played: Number.isSafeInteger(data.played) && data.played >= 0 ? data.played : 0,
+            wins: Number.isSafeInteger(data.wins) && data.wins >= 0 ? data.wins : 0 };
+        } catch (e) { return { played: 0, wins: 0 }; }
+      }
+      function renderBotStats() {
+        const stats = getBotStats();
+        document.getElementById('bot-record').textContent = `BOT: ${stats.wins} VITÓRIAS / ${stats.played} PARTIDAS`;
+      }
+      renderBotStats();
+      let damageFlashTimer = null;
+      function showDamageFlash() {
+        const flash = document.getElementById('damage-flash');
+        flash.style.opacity = '1';
+        clearTimeout(damageFlashTimer);
+        damageFlashTimer = setTimeout(() => { flash.style.opacity = '0'; }, 160);
+      }
+      let duelTimerCallback = null, duelTimerDeadline = 0, duelTimerRemaining = 0;
+      function scheduleDuelTimer(fn, delay) {
+        clearTimeout(duel.timer);
+        duelTimerCallback = fn; duelTimerRemaining = delay;
+        duelTimerDeadline = performance.now() + delay;
+        duel.timer = setTimeout(() => { duel.timer = null; duelTimerCallback = null; fn(); }, delay);
+      }
+      function pauseSoloDuelTimer() {
+        if (!duel.bot || !duelTimerCallback || duel.timer === null) return;
+        duelTimerRemaining = Math.max(0, duelTimerDeadline - performance.now());
+        clearTimeout(duel.timer); duel.timer = null;
+      }
+      function resumeSoloDuelTimer() {
+        if (duel.bot && duelTimerCallback && duel.timer === null) scheduleDuelTimer(duelTimerCallback, duelTimerRemaining);
+      }
       const duelHost = () => isHost || duel.bot;
       let victoryRig = null;
       let victoryStage = null;
@@ -1773,6 +1833,8 @@
       }
       function resetDuel() {
         clearTimeout(duel.timer);
+        duelTimerCallback = null;
+        document.getElementById('damage-flash').style.opacity = '0';
         if (duel.bot) removeRemotePlayer(BOT_ID);
         victoryShown = false;
         if (victoryStage) victoryStage.visible = false;
@@ -1786,18 +1848,39 @@
       }
       function endDuel(message) {
         clearTimeout(duel.timer);
+        duelTimerCallback = null;
         if (inLobby) { resetDuel(); setRoomFeedback(message, true); return; }
-        duel.phase = 'finished';
+        duel.phase = 'aborted';
         isFiring = false;
-        document.getElementById('duel-message').textContent = message + ' Volte ao lobby.';
+        document.getElementById('duel-message').textContent = message;
+        document.getElementById('duel-result-title').textContent = 'PARTIDA ENCERRADA';
+        document.getElementById('duel-result-score').textContent = message;
+        document.getElementById('duel-result-rematch').classList.add('hidden');
+        document.getElementById('duel-result').classList.remove('hidden');
+        document.getElementById('duel-result').classList.add('flex');
+        pauseOverlayEl.classList.add('hidden');
+        pauseOverlayEl.classList.remove('flex');
+        if (document.pointerLockElement) document.exitPointerLock();
       }
       function updateDuelHud(message) {
         document.getElementById('duel-hud').classList.remove('hidden');
         document.getElementById('duel-score').textContent = `ROUND ${duel.round || 1} • VOCÊ ${duelHost() ? duel.hostWins : duel.guestWins} × ${duelHost() ? duel.guestWins : duel.hostWins} ${duel.bot ? 'BOT' : 'ADVERSÁRIO'}`;
-        document.getElementById('duel-health').textContent = `VIDA ${duelHost() ? duel.hostHealth : duel.guestHealth}/100 • RIVAL ${duelHost() ? duel.guestHealth : duel.hostHealth}/100 • ${WEAPONS[currentWeaponKey].name} · ${magAmmo}`;
+        const myHealth = duelHost() ? duel.hostHealth : duel.guestHealth;
+        const rivalHealth = duelHost() ? duel.guestHealth : duel.hostHealth;
+        document.getElementById('duel-health').textContent = `VIDA ${myHealth}/100 • RIVAL ${rivalHealth}/100 • ${WEAPONS[currentWeaponKey].name} · ${magAmmo}`;
+        document.getElementById('duel-life-bar').style.width = clamp(myHealth, 0, 100) + '%';
+        document.getElementById('duel-enemy-bar').style.width = clamp(rivalHealth, 0, 100) + '%';
         if (message !== undefined) document.getElementById('duel-message').textContent = message;
         if (duel.phase === 'finished') {
           const won = duelHost() ? duel.hostWins === 2 : duel.guestWins === 2;
+          if (duel.bot && !duel.resultRecorded) {
+            duel.resultRecorded = true;
+            const stats = getBotStats(); stats.played++; if (won) stats.wins++;
+            try { localStorage.setItem(BOT_STATS_KEY, JSON.stringify(stats)); } catch (e) {}
+            renderBotStats();
+          }
+          document.getElementById('victory-rematch').classList.toggle('hidden', !duel.bot);
+          document.getElementById('duel-result-rematch').classList.toggle('hidden', !duel.bot);
           if (won) {
             showVictoryScene();
           } else {
@@ -1844,16 +1927,17 @@
           count--;
           if (count > 0) {
             sendDuelSnapshot('COMEÇA EM ' + count);
-            duel.timer = setTimeout(nextCount, 1000);
+            scheduleDuelTimer(nextCount, 1000);
           } else {
             duel.phase = 'active';
             sendDuelSnapshot('LUTE!');
           }
         }
-        duel.timer = setTimeout(nextCount, 1000);
+        scheduleDuelTimer(nextCount, 1000);
       }
       function applyDuelSnapshot(data) {
         const newRound = data.spawn && data.round !== duel.round;
+        if (!newRound && duel.phase === 'active' && data.guestHealth < duel.guestHealth) showDamageFlash();
         Object.assign(duel, { phase: data.phase, round: data.round, hostHealth: data.hostHealth,
           guestHealth: data.guestHealth, hostWins: data.hostWins, guestWins: data.guestWins });
         if (newRound) spawnDuelPlayer();
@@ -1864,6 +1948,7 @@
         if (!duelHost() || duel.phase !== 'active') return;
         const key = victim === 'host' ? 'hostHealth' : 'guestHealth';
         duel[key] = Math.max(0, duel[key] - (head ? WEAPONS[weapon].headDmg : WEAPONS[weapon].bodyDmg));
+        if (victim === 'host') showDamageFlash();
         if (duel[key] > 0) { sendDuelSnapshot('LUTE!'); return; }
         duel[victim === 'host' ? 'guestWins' : 'hostWins']++;
         isFiring = false;
@@ -1873,7 +1958,7 @@
         } else {
           duel.phase = 'between';
           sendDuelSnapshot((victim === 'host' ? (duel.bot ? 'BOT' : 'CONVIDADO') : 'ANFITRIÃO') + ' VENCEU O ROUND! Próximo em 3 segundos.');
-          duel.timer = setTimeout(startDuelRound, 3000);
+          scheduleDuelTimer(startDuelRound, 3000);
         }
       }
       function beginDuel() {
@@ -1881,7 +1966,7 @@
           setRoomFeedback(!isHost && roomCode ? 'Aguarde o anfitrião iniciar a arena.' : 'A arena exige uma sala com exatamente 2 jogadores.', true);
           showTab('net'); return;
         }
-        Object.assign(duel, { id: Date.now().toString(36) + Math.random().toString(36).slice(2), bot: false, phase: 'waiting', round: 0,
+        Object.assign(duel, { id: Date.now().toString(36) + Math.random().toString(36).slice(2), bot: false, resultRecorded: false, phase: 'waiting', round: 0,
           hostHealth: 100, guestHealth: 100, hostWins: 0, guestWins: 0 });
         enterMatch();
         updateDuelHud('Aguardando o adversário entrar...');
@@ -1892,14 +1977,22 @@
           setRoomFeedback('Desconecte da sala online para jogar contra o bot.', true);
           showTab('net'); return;
         }
-        Object.assign(duel, { id: 'bot-' + Date.now().toString(36), bot: true, phase: 'waiting', round: 0,
+        Object.assign(duel, { id: 'bot-' + Date.now().toString(36), bot: true, resultRecorded: false, phase: 'waiting', round: 0,
           hostHealth: 100, guestHealth: 100, hostWins: 0, guestWins: 0 });
+        botAI.difficulty = BOT_DIFFICULTIES[botDifficultyEl.value] ? botDifficultyEl.value : 'normal';
         const bot = getOrCreateRemotePlayer(BOT_ID);
         bot.targetPos.set(ARENA_X, 0, -17);
         bot.rig.root.position.copy(bot.targetPos);
         enterMatch();
         startDuelRound();
       });
+      function botRematch() {
+        if (!duel.bot || duel.phase !== 'finished') return;
+        returnToLobby();
+        document.getElementById('bot-duel-btn').click();
+      }
+      document.getElementById('duel-result-rematch').addEventListener('click', botRematch);
+      document.getElementById('victory-rematch').addEventListener('click', botRematch);
       document.getElementById('duel-result-lobby').addEventListener('click', returnToLobby);
       document.getElementById('victory-lobby').addEventListener('click', returnToLobby);
       document.getElementById('duel-ready').addEventListener('click', () => {
@@ -1969,6 +2062,7 @@
 
       function returnToLobby() {
         resetTrainingChallenge();
+        clearGameplayInputs();
         if (gamepadBinding) cancelGamepadBinding();
         if (duel.phase !== 'idle') { broadcastData({ type: 'duel_leave', id: duel.id }); resetDuel(); }
         isFiring = false;
@@ -2000,6 +2094,11 @@
       function pauseMatch() {
         if (inLobby) return;
         tickTrainingChallenge();
+        pauseSoloDuelTimer();
+        clearGameplayInputs();
+        const onlineDuel = duel.phase !== 'idle' && !duel.bot;
+        document.getElementById('pause-online-note').classList.toggle('hidden', !onlineDuel);
+        document.getElementById('pause-heading').textContent = onlineDuel ? 'MENU ONLINE' : 'PARTIDA PAUSADA';
         isPaused = true;
         gameActive = false;
         if (trainingChallenge.active) trainingChallenge.lastTime = null;
@@ -2017,6 +2116,7 @@
         isPaused = false;
         gameActive = true;
         if (trainingChallenge.active) trainingChallenge.lastTime = performance.now();
+        resumeSoloDuelTimer();
         pauseOverlayEl.classList.add('hidden');
         pauseOverlayEl.classList.remove('flex');
         if (!isTouchDevice) {
@@ -2076,7 +2176,7 @@
       document.addEventListener('pointerlockchange', () => {
         if (isTouchDevice || inLobby) return;
         const locked = document.pointerLockElement === renderer.domElement;
-        if (!locked && !isPaused && duel.phase !== 'finished') {
+        if (!locked && !isPaused && duel.phase !== 'finished' && duel.phase !== 'aborted') {
           pauseMatch();
         }
       });
@@ -2086,9 +2186,16 @@
       // =========================================================
       const _aimTargetWorld = new THREE.Vector3();
       const _aimDir = new THREE.Vector3();
+      const _aimCoverRay = new THREE.Raycaster();
+      const _aimRayDirection = new THREE.Vector3();
+      function aimHasClearSight(distance) {
+        _aimCoverRay.set(camera.position, _aimRayDirection.copy(_aimDir).normalize());
+        _aimCoverRay.far = Math.max(0, distance - 0.05);
+        return _aimCoverRay.intersectObjects(coverMeshes, false).length === 0;
+      }
 
       function applyControllerAimAssist(dt, isUserLooking) {
-        if (!gpState.connected || !gameActive || inLobby || isPaused) return;
+        if (!gpState.connected || !gameActive || inLobby || isPaused || (duel.phase !== 'idle' && duel.phase !== 'active')) return;
 
         let bestYaw = 0;
         let bestPitch = 0;
@@ -2117,7 +2224,7 @@
           const dPitch = desiredPitch - pitch;
           const angularDist = Math.hypot(dYaw, dPitch);
 
-          if (angularDist < bestAngle) {
+          if (angularDist < bestAngle && aimHasClearSight(dist)) {
             bestAngle = angularDist;
             bestYaw = dYaw;
             bestPitch = dPitch;
@@ -2144,7 +2251,7 @@
           const dPitch = desiredPitch - pitch;
           const angularDist = Math.hypot(dYaw, dPitch);
 
-          if (angularDist < bestAngle) {
+          if (angularDist < bestAngle && aimHasClearSight(dist)) {
             bestAngle = angularDist;
             bestYaw = dYaw;
             bestPitch = dPitch;
@@ -2240,7 +2347,7 @@
         const btnL2 = button(6);
         const btnR2 = button(7);
         const btnStart = button(9);
-        if (duel.phase === 'finished') {
+        if (duel.phase === 'finished' || duel.phase === 'aborted') {
           if ((btnA && !gpState.prevJump) || (btnStart && !gpState.prevStart)) returnToLobby();
           gpState.prevJump = btnA;
           gpState.prevStart = btnStart;
@@ -2484,12 +2591,23 @@
         }
       }, { passive: false });
 
-      btnFire.addEventListener('touchend', (e) => {
+      function endFireTouch(e) {
+        if (!Array.from(e.changedTouches).some(t => t.identifier === fireTouchId)) return;
         e.preventDefault();
         fireTouchId = null;
         isFiring = false;
         btnFire.classList.remove('active');
-      });
+      }
+      btnFire.addEventListener('touchend', endFireTouch);
+      btnFire.addEventListener('touchcancel', endFireTouch);
+      function clearGameplayInputs() {
+        joyInput.active = false; joyInput.id = null; joyInput.x = joyInput.y = 0;
+        lookTouch.id = null; fireTouchId = null; isFiring = false; isADS = false;
+        Object.keys(keys).forEach(key => { keys[key] = false; });
+        joyKnob.style.transform = 'translate(0px, 0px)';
+        btnFire.classList.remove('active'); btnAds.classList.remove('active');
+      }
+      window.addEventListener('blur', () => { if (!inLobby) clearGameplayInputs(); });
 
       btnAds.addEventListener('touchstart', (e) => {
         e.preventDefault();
@@ -2788,19 +2906,20 @@
         bot.targetYaw = Math.atan2(-dx, -dz);
         botAI.directionTimer -= dt;
         if (botAI.directionTimer <= 0) { botAI.strafe *= -1; botAI.directionTimer = 2.2 + Math.random() * 1.5; }
+        const difficulty = BOT_DIFFICULTIES[botAI.difficulty] || BOT_DIFFICULTIES.normal;
         const approach = distance > 11 ? 0.9 : (distance < 6 ? -0.6 : 0);
         const vx = dx / distance * approach + (-dz / distance) * botAI.strafe * 0.55;
         const vz = dz / distance * approach + (dx / distance) * botAI.strafe * 0.55;
         const next = bot.targetPos.clone();
-        next.x += vx * 3 * dt;
+        next.x += vx * difficulty.speed * dt;
         if (!collidesAt(next, 1.85)) bot.targetPos.x = next.x;
         else botAI.strafe *= -1;
-        next.copy(bot.targetPos); next.z += vz * 3 * dt;
+        next.copy(bot.targetPos); next.z += vz * difficulty.speed * dt;
         if (!collidesAt(next, 1.85)) bot.targetPos.z = next.z;
         else botAI.strafe *= -1;
         botAI.fireTimer -= dt;
         if (botAI.fireTimer > 0) return;
-        botAI.fireTimer = 0.8 + Math.random() * 0.4;
+        botAI.fireTimer = difficulty.interval + Math.random() * 0.4;
         const from = bot.rig.root.position.clone().add(new THREE.Vector3(0, 1.5, 0));
         const to = playerPos.clone().add(new THREE.Vector3(0, currentEye, 0));
         const direction = to.clone().sub(from);
@@ -2809,7 +2928,7 @@
         scene.updateMatrixWorld(true);
         botRay.set(from, direction.normalize()); botRay.far = length;
         if (botRay.intersectObjects(coverMeshes, false).length) return;
-        const hit = Math.random() < 0.6;
+        const hit = Math.random() < difficulty.accuracy;
         const end = hit ? to : to.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 0.4, (Math.random() - 0.5) * 2));
         spawnTracer(from, end);
         playShootSound(true, 0.4);
