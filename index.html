@@ -181,6 +181,11 @@
 
       <div class="pointer-events-auto fixed bottom-6 right-5 flex flex-col items-end gap-2.5">
         <div class="flex items-center gap-2.5">
+          <button id="btn-switch-weapon" class="touch-btn pointer-events-auto flex min-h-[44px] min-w-[56px] flex-col items-center justify-center rounded-xl border border-amber-400/70 bg-slate-950/80 px-2 text-amber-300" aria-label="Trocar de arma" title="Trocar de arma (Q)">
+            <span class="text-lg leading-none" aria-hidden="true">⇄</span>
+            <span class="text-[9px] font-bold leading-tight">TROCAR</span>
+            <span id="training-weapon-info" class="text-[9px] font-bold text-white">AR · 30</span>
+          </button>
           <button id="btn-reload" class="touch-btn flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-slate-950/50 text-slate-200" aria-label="Recarregar">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -1290,6 +1295,8 @@
       let isFiring = false;
       let fireCooldown = 0;
       let magAmmo = WEAPONS.ar.magSize;
+      // Cada arma conserva seu próprio carregador durante o treinamento.
+      let trainingAmmo = { ar: WEAPONS.ar.magSize, smg: WEAPONS.smg.magSize };
       let isReloading = false;
       let recoilOffset = 0;
       let muzzleTimer = 0;
@@ -1714,6 +1721,9 @@
 
       function enterMatch() {
         initAudio();
+        trainingAmmo = { ar: WEAPONS.ar.magSize, smg: WEAPONS.smg.magSize };
+        if (currentModeKey !== 'arena') magAmmo = trainingAmmo[currentWeaponKey];
+        document.getElementById('btn-switch-weapon').classList.toggle('hidden', currentModeKey === 'arena');
         const mode = MODES[currentModeKey];
         playerPos.copy(mode.spawn);
         if (currentModeKey === 'arena' && peer && peer.id) {
@@ -2157,6 +2167,30 @@
       const btnJump = document.getElementById('btn-jump');
       const btnSlide = document.getElementById('btn-slide');
       const btnReload = document.getElementById('btn-reload');
+      const btnSwitchWeapon = document.getElementById('btn-switch-weapon');
+
+      function switchTrainingWeapon() {
+        if (inLobby || !gameActive || isPaused || currentModeKey === 'arena') return;
+        trainingAmmo[currentWeaponKey] = magAmmo;
+        const next = currentWeaponKey === 'ar' ? 'smg' : 'ar';
+        isFiring = false;
+        resetWeaponTransforms();
+        applyWeaponSelection(next);
+        magAmmo = trainingAmmo[next];
+        fireCooldown = 0;
+        btnSwitchWeapon.title = `Trocar de arma (Q) • ${WEAPONS[next].name}`;
+      }
+      btnSwitchWeapon.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        switchTrainingWeapon();
+      }, { passive: false });
+      btnSwitchWeapon.addEventListener('mousedown', (e) => e.stopPropagation());
+      btnSwitchWeapon.addEventListener('click', (e) => {
+        e.stopPropagation();
+        switchTrainingWeapon();
+      });
+
 
       let fireTouchId = null;
       let fireLastX = 0;
@@ -2259,6 +2293,7 @@
         if (e.code === 'KeyC' || e.code === 'ControlLeft') triggerSlide();
         if (e.code === 'Space') triggerJump();
         if (e.code === 'KeyR' && !isReloading && magAmmo < WEAPONS[currentWeaponKey].magSize) startReload();
+        if (e.code === 'KeyQ' && !e.repeat) switchTrainingWeapon();
       });
 
       window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -2723,6 +2758,9 @@
           lobbyRig.headGroup.rotation.y = clamp(Math.sin(elapsed * 1.1) * 0.08, -0.15, 0.15);
         } else if (gameActive) {
           const wCfg = WEAPONS[currentWeaponKey];
+          if (currentModeKey !== 'arena') {
+            document.getElementById('training-weapon-info').textContent = `${currentWeaponKey.toUpperCase()} · ${magAmmo}`;
+          }
 
           if (slideCooldown > 0) slideCooldown = Math.max(0, slideCooldown - dt);
           if (fireCooldown > 0) fireCooldown -= dt;
