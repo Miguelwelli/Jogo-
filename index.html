@@ -97,6 +97,19 @@
       .operator-equip { padding:5px; margin:0 5px 5px; }
       .operator-heading { top:4%; }
     }
+    #victory-scene { position:fixed; inset:0; z-index:40; display:flex; flex-direction:column; align-items:center; justify-content:space-between; overflow:hidden; padding:clamp(12px,3vh,32px); text-align:center; background:linear-gradient(180deg,rgba(3,12,30,.84),transparent 38%,transparent 58%,rgba(3,12,30,.92)); }
+    #victory-scene.hidden { display:none; }
+    .victory-heading, .victory-actions { position:relative; z-index:2; }
+    .victory-heading { color:#ffe07a; font-size:clamp(30px,7vw,72px); font-weight:1000; line-height:1; letter-spacing:.08em; text-shadow:0 3px 0 #966000,0 5px 20px #000; animation:victory-title .6s ease-out both; }
+    .victory-subtitle { margin-top:6px; color:#fff; font-size:clamp(10px,1.5vw,16px); font-weight:900; letter-spacing:.2em; text-shadow:0 2px 8px #000; }
+    .victory-score { color:#fff; font-weight:900; text-shadow:0 2px 8px #000; margin-bottom:8px; font-size:clamp(14px,2vw,20px); }
+    .victory-button { pointer-events:auto; min-width:200px; padding:10px 20px; border:2px solid #ffe797; border-radius:10px; background:linear-gradient(#ffe26a,#eca900); color:#513200; font-weight:1000; box-shadow:0 4px 0 #8c5600; }
+    .victory-confetti { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+    .victory-confetti i { position:absolute; top:-12%; width:9px; height:17px; background:var(--color); left:var(--left); animation:victory-fall var(--duration) linear var(--delay) infinite; }
+    @keyframes victory-fall { to { transform:translate3d(50px,115vh,0) rotate(720deg); } }
+    @keyframes victory-title { from { opacity:0; transform:scale(.65); } to { opacity:1; transform:scale(1); } }
+    @media (prefers-reduced-motion:reduce) { .victory-confetti i,.victory-heading { animation:none; } }
+    @media (max-height:420px) { .victory-heading { font-size:32px; } .victory-subtitle { margin-top:2px; } .victory-score { margin-bottom:3px; } .victory-button { padding:6px 14px; } }
     @media (max-height: 420px) {
       #lobby-top { padding: 4px 10px !important; }
       #lobby-top .lobby-title { font-size: 14px !important; }
@@ -389,6 +402,12 @@
         <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-black tracking-wider text-white"><svg viewBox="0 0 40 16" class="h-3 w-7" fill="currentColor"><path d="M0 6h22l4-2h14v3H27l-3 2h-6l-2 7h-5l1-7H0z"/></svg><span id="lobby-summary"></span></div>
       </div>
     </div>
+  </div>
+
+  <div id="victory-scene" class="hidden" role="dialog" aria-modal="true" aria-labelledby="victory-title">
+    <div class="victory-confetti" id="victory-confetti" aria-hidden="true"></div>
+    <div><h2 id="victory-title" class="victory-heading">VITÓRIA!</h2><div class="victory-subtitle">VOCÊ VENCEU O DUELO</div></div>
+    <div class="victory-actions"><div id="victory-score" class="victory-score"></div><button id="victory-lobby" class="victory-button" type="button">VOLTAR AO LOBBY</button></div>
   </div>
 
   <div id="duel-result" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-950/85 p-4">
@@ -1688,9 +1707,76 @@
       const BOT_ID = '__arena_bot__';
       const botAI = { fireTimer: 1, directionTimer: 0, strafe: 1 };
       const duelHost = () => isHost || duel.bot;
+      let victoryRig = null;
+      let victoryStage = null;
+      let victoryElapsed = 0;
+      let victoryShown = false;
+      const victoryConfetti = document.getElementById('victory-confetti');
+      for (let i = 0; i < 28; i++) {
+        const piece = document.createElement('i');
+        piece.style.setProperty('--left', `${(i * 37) % 100}%`);
+        piece.style.setProperty('--color', ['#ffd348', '#53e9ef', '#ff6585', '#a783ff'][i % 4]);
+        piece.style.setProperty('--duration', `${2.5 + (i % 5) * 0.45}s`);
+        piece.style.setProperty('--delay', `${-(i % 9) * 0.38}s`);
+        victoryConfetti.appendChild(piece);
+      }
+      function showVictoryScene() {
+        if (victoryShown) return;
+        victoryShown = true;
+        victoryElapsed = 0;
+        if (!victoryRig) {
+          victoryRig = buildOperatorRig();
+          victoryStage = new THREE.Group();
+          victoryStage.position.set(ARENA_X, 0, 0);
+          victoryRig.root.position.y = 0.22;
+          victoryStage.add(victoryRig.root);
+          const podium = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.5, 0.22, 24), new THREE.MeshStandardMaterial({ color: 0x485b77, roughness: 0.7, flatShading: true }));
+          podium.position.y = 0.11;
+          victoryStage.add(podium);
+          const ring = new THREE.Mesh(new THREE.RingGeometry(1.12, 1.25, 32), new THREE.MeshBasicMaterial({ color: 0xffd34d, side: THREE.DoubleSide }));
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.y = 0.225;
+          victoryStage.add(ring);
+          const light = new THREE.PointLight(0xffe7a0, 1.5, 12);
+          light.position.set(1, 3.5, 3);
+          victoryStage.add(light);
+          scene.add(victoryStage);
+        }
+        paintRig(victoryRig, profile.skin, profile.color);
+        victoryRig.opGun.visible = false;
+        victoryStage.visible = true;
+        weaponGroup.visible = false;
+        hudEl.classList.add('hidden');
+        hudEl.classList.remove('flex');
+        pauseOverlayEl.classList.add('hidden');
+        pauseOverlayEl.classList.remove('flex');
+        document.getElementById('victory-score').textContent = `VOCÊ ${duelHost() ? duel.hostWins : duel.guestWins} × ${duelHost() ? duel.guestWins : duel.hostWins} ${duel.bot ? 'BOT' : 'ADVERSÁRIO'}`;
+        document.getElementById('victory-scene').classList.remove('hidden');
+      }
+      function animateVictory(dt) {
+        if (!victoryShown || !victoryStage) return;
+        victoryElapsed += dt;
+        const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const wave = reduced ? 0 : Math.sin(victoryElapsed * 5);
+        victoryRig.root.position.y = 0.22 + (reduced ? 0 : Math.max(0, Math.sin(victoryElapsed * 4)) * 0.12);
+        victoryRig.root.rotation.y = Math.atan2(2.8, 5) + (reduced ? 0 : Math.sin(victoryElapsed * 1.8) * 0.15);
+        victoryRig.armR.position.set(0.38, 1.52, 0.04);
+        victoryRig.armR.rotation.set(0, 0, -2.5 + wave * 0.25);
+        victoryRig.armL.position.set(-0.38, 1.5, 0.04);
+        victoryRig.armL.rotation.set(0, 0, 2.5 - wave * 0.25);
+        const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+        const distance = aspect < 1 ? 1.45 : 1;
+        camera.position.set(ARENA_X + 2.8 * distance, 2.8, 5 * distance);
+        camera.lookAt(ARENA_X, 1.25, 0);
+        camera.fov = 45;
+        camera.updateProjectionMatrix();
+      }
       function resetDuel() {
         clearTimeout(duel.timer);
         if (duel.bot) removeRemotePlayer(BOT_ID);
+        victoryShown = false;
+        if (victoryStage) victoryStage.visible = false;
+        document.getElementById('victory-scene').classList.add('hidden');
         Object.assign(duel, { id: '', phase: 'idle', round: 0, timer: null, bot: false });
         document.getElementById('duel-result').classList.add('hidden');
         document.getElementById('duel-result').classList.remove('flex');
@@ -1712,10 +1798,14 @@
         if (message !== undefined) document.getElementById('duel-message').textContent = message;
         if (duel.phase === 'finished') {
           const won = duelHost() ? duel.hostWins === 2 : duel.guestWins === 2;
-          document.getElementById('duel-result-title').textContent = won ? 'VITÓRIA!' : 'DERROTA';
-          document.getElementById('duel-result-score').textContent = `PLACAR: VOCÊ ${duelHost() ? duel.hostWins : duel.guestWins} × ${duelHost() ? duel.guestWins : duel.hostWins} ${duel.bot ? 'BOT' : 'ADVERSÁRIO'}`;
-          document.getElementById('duel-result').classList.remove('hidden');
-          document.getElementById('duel-result').classList.add('flex');
+          if (won) {
+            showVictoryScene();
+          } else {
+            document.getElementById('duel-result-title').textContent = 'DERROTA';
+            document.getElementById('duel-result-score').textContent = `PLACAR: VOCÊ ${duelHost() ? duel.hostWins : duel.guestWins} × ${duelHost() ? duel.guestWins : duel.hostWins} ${duel.bot ? 'BOT' : 'ADVERSÁRIO'}`;
+            document.getElementById('duel-result').classList.remove('hidden');
+            document.getElementById('duel-result').classList.add('flex');
+          }
           if (document.pointerLockElement) document.exitPointerLock();
         }
       }
@@ -1811,6 +1901,7 @@
         startDuelRound();
       });
       document.getElementById('duel-result-lobby').addEventListener('click', returnToLobby);
+      document.getElementById('victory-lobby').addEventListener('click', returnToLobby);
       document.getElementById('duel-ready').addEventListener('click', () => {
         if (duel.phase !== 'invited') return;
         document.getElementById('duel-invite').classList.add('hidden');
@@ -2149,6 +2240,12 @@
         const btnL2 = button(6);
         const btnR2 = button(7);
         const btnStart = button(9);
+        if (duel.phase === 'finished') {
+          if ((btnA && !gpState.prevJump) || (btnStart && !gpState.prevStart)) returnToLobby();
+          gpState.prevJump = btnA;
+          gpState.prevStart = btnStart;
+          return;
+        }
         const challengePressed = button(12) && !gpState.prevChallenge;
         gpState.prevChallenge = button(12);
 
@@ -3164,6 +3261,7 @@
           camera.position.set(playerPos.x, playerPos.y + standingEye, playerPos.z);
         }
 
+        animateVictory(dt);
         renderer.render(scene, camera);
       }
 
