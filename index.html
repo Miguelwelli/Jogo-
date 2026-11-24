@@ -1322,6 +1322,7 @@
         prevJump: false,
         prevSlide: false,
         prevReload: false,
+        prevSwitch: false,
         prevAds: false,
         prevStart: false
       };
@@ -1983,6 +1984,7 @@
           gpState.lookX = 0;
           gpState.lookY = 0;
           gpState.sprint = false;
+          gpState.prevSwitch = false;
           return;
         }
 
@@ -2001,6 +2003,10 @@
         const btnA = !!(gp.buttons[0] && gp.buttons[0].pressed);
         const btnB = !!(gp.buttons[1] && gp.buttons[1].pressed);
         const btnX = !!(gp.buttons[2] && gp.buttons[2].pressed);
+        // Standard Gamepad: triângulo no PlayStation / Y no Xbox.
+        const btnTriangle = !!(gp.buttons[3] && gp.buttons[3].pressed);
+        const switchPressed = btnTriangle && !gpState.prevSwitch;
+        gpState.prevSwitch = btnTriangle;
         const btnL3 = !!(gp.buttons[10] && gp.buttons[10].pressed);
         const btnL1 = !!(gp.buttons[4] && gp.buttons[4].pressed);
         const btnR1 = !!(gp.buttons[5] && gp.buttons[5].pressed);
@@ -2030,6 +2036,7 @@
         }
 
         if (!gameActive) return;
+        if (switchPressed) switchTrainingWeapon();
 
         const userLooking = (rx !== 0 || ry !== 0);
         if (userLooking) {
