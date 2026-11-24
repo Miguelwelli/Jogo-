@@ -15,6 +15,7 @@ const scenePath = path.join(SKILL, 'assets/ui-resources/files/Backgrounds/132278
 // ------------------------------------------------------------------ nós ---
 let nodeId = 0;
 const created = [];
+const embedded = [];
 class Node {
   constructor(type) {
     this.type = type; this.id = `${++nodeId}:${nodeId}`; this.children = []; this.parent = null;
@@ -44,20 +45,22 @@ globalThis.figma = {
   createText: () => { const n = new Node('TEXT'); created.push(n); return n; },
   createVector: () => { const n = new Node('VECTOR'); created.push(n); return n; },
   createEllipse: () => { const n = new Node('ELLIPSE'); created.push(n); return n; },
+  createImage: (bytes) => {
+    if (!(bytes instanceof Uint8Array) || bytes.length < 100) throw new Error('createImage recebeu bytes inválidos');
+    const dec = Buffer.from(bytes);
+    const isPng = dec.slice(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    if (!isPng) throw new Error('createImage: não é PNG');
+    embedded.push(dec);
+    return { hash: `embedded:${embedded.length - 1}` };
+  },
   group: (nodes) => { const g = new Node('GROUP'); nodes.forEach((n) => g.appendChild(n)); return g; },
   listAvailableFontsAsync: async () => [{ fontName: { family: 'DejaVu Sans', style: 'Bold' } }],
   loadFontAsync: async () => {},
   getNodeByIdAsync: async () => null,
 };
 
-const src = fs.readFileSync(path.join(ROOT, 'figma/nexus-shop-hud.figma.js'), 'utf8');
-const body = src
-  .replace(/\nawait main\(\);\s*$/, '\n')
-  .replace("const FRAME_ID = null;", "const FRAME_ID = null;")
-  .replace(/studs: null,/, "studs: '__STUD__',")
-  .replace(/render: null,/, "render: '__RENDER__',")
-  .replace(/scene: null,/, "scene: '__SCENE__',");
-if (!/__STUD__/.test(body) || !/__RENDER__/.test(body)) { console.error('não consegui injetar os hashes de teste'); process.exit(1); }
+const src = fs.readFileSync(path.join(ROOT, 'figma/nexus-ui.figma.js'), 'utf8');
+const body = src.replace(/\nawait main\(\);\s*$/, '\n');
 
 const run = new Function('figma', `return (async () => { ${body} \n return await main(); })();`);
 const quiet = console.log;
@@ -73,9 +76,10 @@ async function img(p) {
   if (!imgCache.has(p)) imgCache.set(p, await loadImage(p));
   return imgCache.get(p);
 }
-const studImg = await img(studPath);
-const renderImg = await img(renderPath);
-const sceneImg = await img(scenePath);
+const decoded = embedded.map((b) => Buffer.from(b));
+const studImg = await loadImage(decoded[0]);
+const renderImg = await loadImage(decoded[1]);
+const sceneImg = renderImg;
 const studTile = createCanvas(studImg.width, studImg.height);
 studTile.getContext('2d').drawImage(studImg, 0, 0);
 const studPatternBase = studTile;
@@ -105,12 +109,18 @@ function roundRectPath(c, x, y, w, h, r) {
   pathInto(c, x, y, w, h, r);
 }
 
+const HIT = (process.env.HIT || '').split(',').map(Number);
 function fillPaint(c, paints, x, y, w, h, node) {
+  if (HIT.length === 2 && x <= HIT[0] && HIT[0] <= x + w && y <= HIT[1] && HIT[1] <= y + h) {
+    const f0 = paints[0];
+    const desc = f0 ? f0.type + (f0.type === 'SOLID' ? ` ${[f0.color.r, f0.color.g, f0.color.b].map((v) => Math.round(v * 255)).join(',')} a${f0.color.a ?? 1}` : '') : 'none';
+    console.error('[hit]', node.type, node.name || '(sem nome)', `x${Math.round(x)} y${Math.round(y)} ${Math.round(w)}x${Math.round(h)}`, 'op', node.opacity, desc);
+  }
   if (!paints || !paints.length) return false;
   const f = paints[0];
   if (f.type === 'SOLID') { c.fillStyle = col(f.color); c.fillRect(x, y, w, h); return true; }
   if (f.type === 'IMAGE') {
-    const im = f.imageHash === '__STUD__' ? studPatternBase : f.imageHash === '__RENDER__' ? renderImg : sceneImg;
+    const im = f.imageHash === 'embedded:0' ? studPatternBase : renderImg;
     c.save(); roundRectPath(c, x, y, w, h, node.cornerRadius || 0); c.clip();
     if (f.scaleMode === 'TILE') {
       const sw = studPatternBase.width * (f.scalingFactor || 1);
@@ -133,7 +143,7 @@ function fillPaint(c, paints, x, y, w, h, node) {
     c.fillStyle = g; c.fillRect(x, y, w, h); return true;
   }
   if (f.type === 'GRADIENT_RADIAL') {
-    const g = c.createRadialGradient(x + w / 2, y + h / 2, Math.min(w, h) * 0.2, x + w / 2, y + h / 2, Math.max(w, h) * 0.62);
+    const g = c.createRadialGradient(x + w / 2, y + h / 2, 0, x + w / 2, y + h / 2, Math.max(w, h) * 0.62);
     f.gradientStops.forEach((s) => g.addColorStop(Math.min(1, Math.max(0, s.position)), col(s.color)));
     c.fillStyle = g; c.fillRect(x, y, w, h); return true;
   }
@@ -150,79 +160,81 @@ function strokePaint(c, node, x, y, w, h) {
   c.stroke();
 }
 
-function draw(node, ox, oy, alpha = 1) {
-  const x = ox + node.x, y = oy + node.y, w = node.width, h = node.height;
+function draw(node, alpha = 1) {
+  const w = node.width; const h = node.height;
   const a = alpha * (node.opacity ?? 1);
-  const isClip = node.clipsContent;
-  {
-    ctx.save();
-    if (isClip) {
-      const cp = new Path2D();
-      pathInto(cp, x, y, w, h, node.cornerRadius || 0);
-      ctx.clip(cp);
-    }
-    if (a < 1) ctx.globalAlpha = a;
+  const isPlainFrame = node.type === 'FRAME' && (!node.fills || !node.fills.length) && (!node.strokes || !node.strokes.length);
 
-    if (node.type === 'RECTANGLE' || node.type === 'FRAME' || node.type === 'GROUP') {
-      if (node.fills && node.fills.length) fillPaint(ctx, node.fills, x, y, w, h, node);
-      if (node.type === 'RECTANGLE') strokePaint(ctx, node, x, y, w, h);
-      if (node.type === 'FRAME' && !isClip) {
-        // frames sem clip ainda podem ter stroke (ex.: focus ring)
-        strokePaint(ctx, node, x, y, w, h);
-      }
-      if (node.effects && node.effects.length) {
-        const e = node.effects[0];
-        if (e.type === 'DROP_SHADOW') {
-          ctx.save();
-          ctx.globalAlpha = a * (e.color.a ?? 0.5);
-          ctx.fillStyle = col(e.color);
-          ctx.fillRect(x + e.offset.x, y + e.offset.y, w, h);
-          ctx.restore();
-        }
-      }
-    }
-
-    if (node.type === 'TEXT') {
-      const fam = (node.fontName && node.fontName.family) || 'DejaVu Sans';
-      const weight = (node.fontName && /Bold|Black|Extra/i.test(node.fontName.style)) ? 'bold' : 'normal';
-      const size = node.fontSize || 12;
-      ctx.font = `${weight} ${size}px "${fam}"`;
-      ctx.textBaseline = 'middle';
-      const track = node.letterSpacing && node.letterSpacing.unit === 'PERCENT' ? (node.letterSpacing.value / 100) * size : 0;
-      ctx.textAlign = node.textAlignHorizontal === 'CENTER' ? 'center' : node.textAlignHorizontal === 'RIGHT' ? 'right' : 'left';
-      const tx = node.textAlignHorizontal === 'CENTER' ? x + w / 2 : node.textAlignHorizontal === 'RIGHT' ? x + w : x;
-      const ty = y + h / 2;
-      if (node.strokes && node.strokes.length && node.strokeWeight) {
-        ctx.lineWidth = node.strokeWeight * 2;
-        ctx.strokeStyle = col(node.strokes[0].color);
-        ctx.lineJoin = 'round';
-        drawTracked(ctx, node.characters, tx, ty, track, true);
-      }
-      if (node.effects && node.effects.length && node.effects[0].type === 'DROP_SHADOW') {
-        ctx.save(); ctx.globalAlpha = a * 0.8; ctx.fillStyle = col(node.effects[0].color);
-        drawTracked(ctx, node.characters, tx, ty + node.effects[0].offset.y, track, false); ctx.restore();
-      }
-      ctx.fillStyle = col(node.fills[0].color);
-      drawTracked(ctx, node.characters, tx, ty, track, false);
-    }
-
-    if (node.type === 'VECTOR' && node.vectorPaths.length) {
-      const p = node.vectorPaths[0].data;
-      // parse simples do caminho "M x y L x y L x y L x y Z"
-      const parts = p.match(/[MLZ][^MLZ]*/g) || [];
-      parts.forEach((seg) => {
-        const t = seg[0]; const v = (seg.slice(1).match(/-?\d+(\.\d+)?/g) || []).map(Number);
-        if (t === 'M') ctx.moveTo(x + v[0], y + v[1]);
-        else if (t === 'L') ctx.lineTo(x + v[0], y + v[1]);
-        else if (t === 'Z') ctx.closePath();
-      });
-      if (node.fills.length) { ctx.fillStyle = col(node.fills[0].color); ctx.fill(); }
-      if (node.strokes.length) { ctx.strokeStyle = col(node.strokes[0].color); ctx.lineWidth = node.strokeWeight * 2; ctx.lineJoin = 'round'; ctx.stroke(); }
-    }
-
-    for (const ch of node.children) draw(ch, x, y, a);
-    ctx.restore();
+  ctx.save();
+  ctx.translate(node.x || 0, node.y || 0);          // coordenadas locais do nó
+  if (node.rotation) {
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate((node.rotation * Math.PI) / 180);
+    ctx.translate(-w / 2, -h / 2);
   }
+  if (node.clipsContent) { const cp = new Path2D(); pathInto(cp, 0, 0, w, h, node.cornerRadius || 0); ctx.clip(cp); }
+  if ((node.opacity ?? 1) < 1) ctx.globalAlpha = node.opacity;
+
+  if (HIT.length === 2) {
+    const m = ctx.getTransform();
+    const hx = m.a * HIT[0] + m.c * HIT[1] + m.e; const hy = m.b * HIT[0] + m.d * HIT[1] + m.f;
+    if (hx >= 0 && hx <= w && hy >= 0 && hy <= h) {
+      const f0 = node.fills && node.fills[0];
+      const desc = f0 ? f0.type + (f0.type === 'SOLID' ? ` ${[f0.color.r, f0.color.g, f0.color.b].map((v) => Math.round(v * 255)).join(',')} a${f0.color.a ?? 1}` : '') : 'sem fill';
+      console.error('[hit]', node.type, JSON.stringify(node.name), `local ${Math.round(hx)},${Math.round(hy)}`, 'op', node.opacity, desc);
+    }
+  }
+
+  if (node.type === 'RECTANGLE' || (node.type === 'FRAME' && !isPlainFrame) || node.type === 'GROUP') {
+    if (node.fills && node.fills.length) fillPaint(ctx, node.fills, 0, 0, w, h, node);
+    if (node.type === 'RECTANGLE' || (node.type === 'FRAME' && !isPlainFrame)) strokePaint(ctx, node, 0, 0, w, h);
+    if (node.effects && node.effects.length) {
+      const e = node.effects[0];
+      if (e.type === 'DROP_SHADOW') {
+        ctx.save(); ctx.globalAlpha = a * (e.color.a ?? 0.5); ctx.fillStyle = col(e.color);
+        ctx.fillRect(e.offset.x, e.offset.y, w, h); ctx.restore();
+      }
+    }
+  }
+
+  if (node.type === 'TEXT') {
+    const fam = (node.fontName && node.fontName.family) || 'DejaVu Sans';
+    const weight = (node.fontName && /Bold|Black|Extra/i.test(node.fontName.style)) ? 'bold' : 'normal';
+    const size = node.fontSize || 12;
+    ctx.font = `${weight} ${size}px "${fam}"`;
+    ctx.textBaseline = 'middle';
+    const track = node.letterSpacing && node.letterSpacing.unit === 'PERCENT' ? (node.letterSpacing.value / 100) * size : 0;
+    ctx.textAlign = node.textAlignHorizontal === 'CENTER' ? 'center' : node.textAlignHorizontal === 'RIGHT' ? 'right' : 'left';
+    const tx = node.textAlignHorizontal === 'CENTER' ? w / 2 : node.textAlignHorizontal === 'RIGHT' ? w : 0;
+    const ty = h / 2;
+    if (node.strokes && node.strokes.length && node.strokeWeight) {
+      ctx.lineWidth = node.strokeWeight * 2; ctx.strokeStyle = col(node.strokes[0].color); ctx.lineJoin = 'round';
+      drawTracked(ctx, node.characters, tx, ty, track, true);
+    }
+    if (node.effects && node.effects.length && node.effects[0].type === 'DROP_SHADOW') {
+      ctx.save(); ctx.globalAlpha = a * 0.8; ctx.fillStyle = col(node.effects[0].color);
+      drawTracked(ctx, node.characters, tx, ty + node.effects[0].offset.y, track, false); ctx.restore();
+    }
+    ctx.fillStyle = col(node.fills[0].color);
+    drawTracked(ctx, node.characters, tx, ty, track, false);
+  }
+
+  if (node.type === 'VECTOR' && node.vectorPaths.length) {
+    const p = node.vectorPaths[0].data;
+    const parts = p.match(/[MLZ][^MLZ]*/g) || [];
+    ctx.beginPath();
+    parts.forEach((seg) => {
+      const t = seg[0]; const v = (seg.slice(1).match(/-?\d+(\.\d+)?/g) || []).map(Number);
+      if (t === 'M') ctx.moveTo(v[0], v[1]);
+      else if (t === 'L') ctx.lineTo(v[0], v[1]);
+      else if (t === 'Z') ctx.closePath();
+    });
+    if (node.fills.length) { ctx.fillStyle = col(node.fills[0].color); ctx.fill(); }
+    if (node.strokes.length) { ctx.strokeStyle = col(node.strokes[0].color); ctx.lineWidth = node.strokeWeight * 2; ctx.lineJoin = 'round'; ctx.stroke(); }
+  }
+
+  for (const ch of node.children) draw(ch, a);
+  ctx.restore();
 }
 
 function drawTracked(c, text, x, y, track, strokeMode) {
@@ -242,7 +254,7 @@ function drawTracked(c, text, x, y, track, strokeMode) {
 }
 
 ctx.fillStyle = '#090D16'; ctx.fillRect(0, 0, 1920, 1080);
-draw(screen, 0, 0, 1);
+draw(screen, 1);
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, canvas.toBuffer('image/png'));

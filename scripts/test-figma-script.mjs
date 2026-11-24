@@ -39,6 +39,7 @@ class Node {
     if (w < 0 || h < 0) throw new Error(`resize negativo em ${this.name || this.type}: ${w}×${h}`);
     this.width = w; this.height = h;
   }
+  rescale(scale) { this.width *= scale; this.height *= scale; this.children.forEach((c) => { c.x *= scale; c.y *= scale; c.rescale(scale); }); }
   clone() { const c = new Node(this.type); Object.assign(c, this, { children: [], id: `${++nodeId}:${nodeId}` }); created.push(c); return c; }
 }
 
@@ -56,6 +57,12 @@ globalThis.figma = {
   createText: () => new Node('TEXT'),
   createVector: () => new Node('VECTOR'),
   createEllipse: () => new Node('ELLIPSE'),
+  createImage: (bytes) => {
+    if (!(bytes instanceof Uint8Array) || bytes.length < 100) throw new Error(`createImage recebeu ${typeof bytes}`);
+    const sig = Array.from(bytes.slice(0, 8)).join(',');
+    if (sig !== '137,80,78,71,13,10,26,10') throw new Error('createImage: bytes não são PNG');
+    return { hash: `img-${bytes.length}` };
+  },
   group: (nodes, parent) => { const g = new Node('GROUP'); parent.appendChild(g); nodes.forEach((n) => n.parent === parent && g.appendChild(n)); return g; },
   listAvailableFontsAsync: async () => fonts,
   loadFontAsync: async (f) => { if (!fonts.find((x) => x.fontName.family === f.family && x.fontName.style === f.style)) throw new Error(`fonte ausente: ${f.family} ${f.style}`); },
@@ -67,7 +74,7 @@ const origLog = console.log;
 const scriptLogs = [];
 console.log = (...a) => { scriptLogs.push(a.join(' ')); };
 
-const src = fs.readFileSync(path.join(process.cwd(), 'figma/nexus-shop-hud.figma.js'), 'utf8');
+const src = fs.readFileSync(path.join(process.cwd(), 'figma/nexus-ui.figma.js'), 'utf8');
 const body = src.replace(/\nawait main\(\);\s*$/, '\n');
 const mod = new Function('figma', `return (async () => { ${body} \n return await main(); })();`);
 let result;
