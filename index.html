@@ -151,6 +151,7 @@
       <div id="duel-health" class="mt-1 text-white"></div>
       <div id="duel-message" class="mt-1 text-sky-300"></div>
     </div>
+    <div id="gamepad-map-message" class="pointer-events-none fixed bottom-32 left-1/2 z-20 hidden w-[min(90vw,360px)] -translate-x-1/2 rounded-lg border border-sky-400/70 bg-slate-950/95 px-4 py-3 text-center text-xs font-bold text-white" role="status" aria-live="polite"></div>
     <!-- Centro: Mira Dinâmica + Hitmarker -->
     <div id="crosshair-container" class="pointer-events-none fixed inset-0 flex items-center justify-center">
       <div id="crosshair" class="relative flex items-center justify-center transition-opacity duration-100">
@@ -185,6 +186,9 @@
             <span class="text-lg leading-none" aria-hidden="true">⇄</span>
             <span class="text-[9px] font-bold leading-tight">TROCAR</span>
             <span id="training-weapon-info" class="text-[9px] font-bold text-white">AR · 30</span>
+          </button>
+          <button id="btn-map-gamepad" class="touch-btn pointer-events-auto flex min-h-[44px] flex-col items-center justify-center rounded-xl border border-sky-400/60 bg-slate-950/80 px-2 text-sky-200" aria-label="Configurar botão de troca no controle" title="Configurar controle">
+            <span class="text-sm leading-none" aria-hidden="true">🎮</span><span class="text-[9px] font-bold leading-tight">CONFIG.</span>
           </button>
           <button id="btn-reload" class="touch-btn flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-slate-950/50 text-slate-200" aria-label="Recarregar">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1312,6 +1316,36 @@
       const joyInput = { x: 0, y: 0, active: false, id: null };
       const lookTouch = { id: null, lastX: 0, lastY: 0 };
 
+      let gamepadBinding = null;
+      let gamepadBindingTimer = null;
+      let gamepadNoticeTimer = null;
+      const GAMEPAD_BIND_PREFIX = 'nexuswz_switch_button_';
+      function getSwitchButtonIndex(gp) {
+        try {
+          const stored = localStorage.getItem(GAMEPAD_BIND_PREFIX + gp.id);
+          if (stored !== null && /^(0|[1-9]\d*)$/.test(stored)) {
+            const index = Number(stored);
+            if (Number.isSafeInteger(index) && index < gp.buttons.length) return index;
+          }
+        } catch (e) {}
+        return 3; // Mapeamento padrão: triângulo / Y.
+      }
+      function isGamepadButtonDown(button) {
+        return typeof button === 'number' ? button > 0.5 : !!button && (button.pressed || button.value > 0.5);
+      }
+      function showGamepadNotice(message, duration = 0) {
+        const el = document.getElementById('gamepad-map-message');
+        clearTimeout(gamepadNoticeTimer);
+        el.textContent = message;
+        el.classList.remove('hidden');
+        if (duration) gamepadNoticeTimer = setTimeout(() => el.classList.add('hidden'), duration);
+      }
+      function cancelGamepadBinding(message) {
+        clearTimeout(gamepadBindingTimer);
+        gamepadBinding = null;
+        if (message) showGamepadNotice(message, 4000);
+        else document.getElementById('gamepad-map-message').classList.add('hidden');
+      }
       const gpState = {
         connected: false,
         moveX: 0,
@@ -1725,6 +1759,7 @@
         trainingAmmo = { ar: WEAPONS.ar.magSize, smg: WEAPONS.smg.magSize };
         if (currentModeKey !== 'arena') magAmmo = trainingAmmo[currentWeaponKey];
         document.getElementById('btn-switch-weapon').classList.toggle('hidden', currentModeKey === 'arena');
+        document.getElementById('btn-map-gamepad').classList.toggle('hidden', currentModeKey === 'arena');
         const mode = MODES[currentModeKey];
         playerPos.copy(mode.spawn);
         if (currentModeKey === 'arena' && peer && peer.id) {
@@ -1773,6 +1808,7 @@
       }
 
       function returnToLobby() {
+        if (gamepadBinding) cancelGamepadBinding();
         if (duel.phase !== 'idle') { broadcastData({ type: 'duel_leave', id: duel.id }); resetDuel(); }
         isFiring = false;
         isADS = false;
@@ -1968,16 +2004,18 @@
       }
 
       function pollGamepad(dt) {
-        const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+        let pads = [];
+        try { pads = navigator.getGamepads ? navigator.getGamepads() : []; } catch (e) {}
         let gp = null;
         for (let i = 0; i < pads.length; i++) {
-          if (pads[i] && pads[i].connected) {
+          if (pads[i] && pads[i].connected !== false) {
             gp = pads[i];
             break;
           }
         }
 
         if (!gp) {
+          if (gamepadBinding) cancelGamepadBinding('Controle desconectado. Conecte o controle e tente novamente.');
           gpState.connected = false;
           gpState.moveX = 0;
           gpState.moveY = 0;
@@ -1989,6 +2027,26 @@
         }
 
         gpState.connected = true;
+        if (gamepadBinding) {
+          if (gamepadBinding.id !== gp.id) {
+            cancelGamepadBinding('O controle mudou. Toque em CONFIG. para tentar novamente.');
+          } else {
+            const pressedIndex = Array.from(gp.buttons).findIndex(isGamepadButtonDown);
+            if (!gamepadBinding.released) {
+              if (pressedIndex === -1) {
+                gamepadBinding.released = true;
+                showGamepadNotice('Agora aperte TRIÂNGULO no controle.');
+              }
+            } else if (pressedIndex !== -1) {
+              try { localStorage.setItem(GAMEPAD_BIND_PREFIX + gp.id, String(pressedIndex)); } catch (e) {}
+              gamepadBinding.index = pressedIndex;
+              gpState.switchOverride = { id: gp.id, index: pressedIndex };
+              gpState.prevSwitch = true;
+              cancelGamepadBinding('Botão configurado! Solte e aperte novamente para trocar de arma.');
+            }
+            return;
+          }
+        }
 
         const lx = applyDeadzone(gp.axes[0] || 0);
         const ly = applyDeadzone(gp.axes[1] || 0);
@@ -2000,19 +2058,21 @@
         gpState.lookX = rx;
         gpState.lookY = ry;
 
-        const btnA = !!(gp.buttons[0] && gp.buttons[0].pressed);
-        const btnB = !!(gp.buttons[1] && gp.buttons[1].pressed);
-        const btnX = !!(gp.buttons[2] && gp.buttons[2].pressed);
-        // Standard Gamepad: triângulo no PlayStation / Y no Xbox.
-        const btnTriangle = !!(gp.buttons[3] && gp.buttons[3].pressed);
+        const switchIndex = gpState.switchOverride && gpState.switchOverride.id === gp.id
+          ? gpState.switchOverride.index : getSwitchButtonIndex(gp);
+        const button = (index) => index !== switchIndex && isGamepadButtonDown(gp.buttons[index]);
+        const btnA = button(0);
+        const btnB = button(1);
+        const btnX = button(2);
+        const btnTriangle = isGamepadButtonDown(gp.buttons[switchIndex]);
         const switchPressed = btnTriangle && !gpState.prevSwitch;
         gpState.prevSwitch = btnTriangle;
-        const btnL3 = !!(gp.buttons[10] && gp.buttons[10].pressed);
-        const btnL1 = !!(gp.buttons[4] && gp.buttons[4].pressed);
-        const btnR1 = !!(gp.buttons[5] && gp.buttons[5].pressed);
-        const btnL2 = !!(gp.buttons[6] && (gp.buttons[6].pressed || gp.buttons[6].value > 0.4));
-        const btnR2 = !!(gp.buttons[7] && (gp.buttons[7].pressed || gp.buttons[7].value > 0.4));
-        const btnStart = !!(gp.buttons[9] && gp.buttons[9].pressed);
+        const btnL3 = button(10);
+        const btnL1 = button(4);
+        const btnR1 = button(5);
+        const btnL2 = button(6);
+        const btnR2 = button(7);
+        const btnStart = button(9);
 
         gpState.sprint = btnL3 || Math.hypot(lx, ly) > 0.88;
 
@@ -2175,6 +2235,22 @@
       const btnSlide = document.getElementById('btn-slide');
       const btnReload = document.getElementById('btn-reload');
       const btnSwitchWeapon = document.getElementById('btn-switch-weapon');
+      const btnMapGamepad = document.getElementById('btn-map-gamepad');
+      function beginGamepadBinding() {
+        if (inLobby || !gameActive || isPaused || currentModeKey === 'arena') return;
+        if (gamepadBinding) { cancelGamepadBinding('Configuração cancelada.'); return; }
+        let pads = [];
+        try { pads = navigator.getGamepads ? navigator.getGamepads() : []; } catch (e) {}
+        const gp = Array.from(pads).find(p => p && p.connected !== false);
+        if (!gp) { showGamepadNotice('Controle não detectado. Conecte e aperte um botão do controle; depois toque em CONFIG.', 6000); return; }
+        gamepadBinding = { id: gp.id, released: false };
+        isFiring = false;
+        showGamepadNotice('Solte todos os botões do controle para configurar.');
+        gamepadBindingTimer = setTimeout(() => cancelGamepadBinding('Tempo esgotado. Toque em CONFIG. para tentar novamente.'), 15000);
+      }
+      btnMapGamepad.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); beginGamepadBinding(); }, { passive: false });
+      btnMapGamepad.addEventListener('mousedown', (e) => e.stopPropagation());
+      btnMapGamepad.addEventListener('click', (e) => { e.stopPropagation(); beginGamepadBinding(); });
 
       function switchTrainingWeapon() {
         if (inLobby || !gameActive || isPaused || currentModeKey === 'arena') return;
